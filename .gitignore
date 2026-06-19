@@ -56,3 +56,8 @@ IMPLEMENTATION_PLAN.md
 ONBOARDING_PLAN.md
 PHASE7_PLAN.md
 REMAINING_IMPLEMENTATION_PLAN.md
+MASTER_PLAN.md
+
+# Skills/agent files
+.agents/
+skills-lock.json

@@ -7,15 +7,16 @@ import 'package:hive/hive.dart';
 
 import '../../core/constants/app_constants.dart';
 import '../../shared/models/device_model.dart';
+import '../security/encryption_service.dart';
 import 'native_clipboard_listener.dart';
 
-/// Direct clipboard sync protocol.
+/// Direct clipboard sync protocol with AES-256-GCM encryption.
 /// Uses NATIVE clipboard listener for real-time detection across all apps.
-/// Sends clipboard content directly (not as .txt file).
-/// Receiver writes to system clipboard immediately.
+/// All clipboard data is encrypted before transmission.
 class ClipboardSyncService {
   final _receivedController = StreamController<ClipboardMessage>.broadcast();
   final NativeClipboardListener _nativeListener = NativeClipboardListener();
+  final EncryptionService _encryption = EncryptionService();
   StreamSubscription? _nativeSubscription;
 
   String? _lastClipboardContent;
@@ -23,14 +24,43 @@ class ClipboardSyncService {
   bool _isListening = false;
   final List<_ConnectedDevice> _connectedDevices = [];
 
+  /// Encryption key for clipboard messages (shared across trusted devices)
+  Uint8List? _sessionKey;
+
   /// Known devices that can receive clipboard via direct TCP fallback.
-  /// Updated when devices are discovered on the network.
   final List<DeviceModel> _knownDevices = [];
 
   Stream<ClipboardMessage> get receivedClipboard => _receivedController.stream;
   bool get isAutoSyncEnabled => _autoSyncEnabled;
 
-  /// Start clipboard monitoring using NATIVE listener (works from any app, not just Flutter)
+  /// Initialize or retrieve a session key for clipboard encryption.
+  /// The key is generated once and stored locally.
+  Future<Uint8List> _getOrCreateSessionKey() async {
+    if (_sessionKey != null) return _sessionKey!;
+
+    try {
+      final box = Hive.box(AppConstants.settingsBox);
+      final storedKey = box.get('clipboard_session_key') as List<dynamic>?;
+      if (storedKey != null && storedKey.length == 32) {
+        _sessionKey = Uint8List.fromList(storedKey.cast<int>());
+        return _sessionKey!;
+      }
+    } catch (e) {
+      debugPrint('[ClipboardSync] Error reading stored key: $e');
+    }
+
+    // Generate a new key
+    _sessionKey = await _encryption.generateSessionKey();
+    try {
+      final box = Hive.box(AppConstants.settingsBox);
+      await box.put('clipboard_session_key', _sessionKey!.toList());
+    } catch (e) {
+      debugPrint('[ClipboardSync] Error storing session key: $e');
+    }
+    return _sessionKey!;
+  }
+
+  /// Start clipboard monitoring using NATIVE listener
   void startAutoSync() {
     _autoSyncEnabled = true;
     _nativeListener.start();
@@ -38,12 +68,7 @@ class ClipboardSyncService {
     _nativeSubscription = _nativeListener.clipboardChanges.listen((text) {
       if (!_autoSyncEnabled) return;
       if (text == _lastClipboardContent) return;
-
-      // Check if we have ANY target devices (persistent connection OR known via discovery)
-      if (_connectedDevices.isEmpty && _knownDevices.isEmpty) {
-        debugPrint('[ClipboardSync] No connected or known devices to broadcast to');
-        return;
-      }
+      if (_connectedDevices.isEmpty && _knownDevices.isEmpty) return;
 
       _lastClipboardContent = text;
       broadcastClipboard(text);
@@ -60,7 +85,7 @@ class ClipboardSyncService {
     debugPrint('[ClipboardSync] Auto-sync stopped');
   }
 
-  /// Register a connected device for clipboard sync (via persistent connection)
+  /// Register a connected device for clipboard sync
   void addConnectedDevice(DeviceModel device, Socket socket) {
     _connectedDevices.removeWhere((d) => d.device.id == device.id);
     _connectedDevices.add(_ConnectedDevice(device: device, socket: socket));
@@ -73,16 +98,13 @@ class ClipboardSyncService {
     debugPrint('[ClipboardSync] Device disconnected: $deviceId');
   }
 
-  /// Update the list of known (discovered) devices that can receive clipboard via TCP fallback.
-  /// Called when device discovery finds/updates devices on the network.
+  /// Update the list of known (discovered) devices
   void updateKnownDevices(List<DeviceModel> devices) {
     _knownDevices.clear();
     _knownDevices.addAll(devices.where((d) => d.ipAddress != null));
-    debugPrint('[ClipboardSync] Known devices updated: ${_knownDevices.length} reachable');
   }
 
-  /// Send current clipboard to ALL known/connected devices (used by notification button).
-  /// Returns the text that was sent, or null if clipboard was empty.
+  /// Send current clipboard to ALL known/connected devices
   Future<String?> sendClipboardToAll() async {
     final text = await _nativeListener.getClipboard();
     if (text.isEmpty) return null;
@@ -90,8 +112,7 @@ class ClipboardSyncService {
     return text;
   }
 
-  /// Called from background isolate when native clipboard change is detected.
-  /// Triggers broadcast to all connected devices.
+  /// Called from background isolate when native clipboard change is detected
   void onLocalClipboardChanged(String text) {
     if (!_autoSyncEnabled) return;
     if (text == _lastClipboardContent) return;
@@ -100,7 +121,7 @@ class ClipboardSyncService {
     broadcastClipboard(text);
   }
 
-  /// Send clipboard content to a specific device (manual send)
+  /// Send clipboard content to a specific device
   Future<bool> sendClipboardTo(DeviceModel device, {String? content}) async {
     final text = content ?? await _nativeListener.getClipboard();
     if (text.isEmpty) return false;
@@ -114,7 +135,6 @@ class ClipboardSyncService {
       return _sendViaSocket(targetSocket, text);
     }
 
-    // Fallback: direct TCP connection
     if (device.ipAddress != null) {
       return _sendViaTcp(device.ipAddress!, device.port ?? AppConstants.transferPort, text);
     }
@@ -122,24 +142,23 @@ class ClipboardSyncService {
     return false;
   }
 
-  /// Send clipboard to ALL connected/known devices.
-  /// Uses persistent socket first, falls back to direct TCP for known devices.
+  /// Send clipboard to ALL connected/known devices (encrypted)
   Future<void> broadcastClipboard(String text) async {
     final sentDeviceIds = <String>{};
 
-    // 1. Send via persistent connections (fastest, already-open sockets)
+    // 1. Send via persistent connections
     for (final connected in _connectedDevices) {
       final success = await _sendViaSocket(connected.socket, text);
       if (success) {
         sentDeviceIds.add(connected.device.id);
       } else {
-        debugPrint('[ClipboardSync] Socket send failed to ${connected.device.name}, will retry via TCP');
+        debugPrint('[ClipboardSync] Socket send failed to ${connected.device.name}');
       }
     }
 
-    // 2. Fallback: send via direct TCP to known devices that weren't reached via socket
+    // 2. Fallback: send via direct TCP to known devices
     for (final device in _knownDevices) {
-      if (sentDeviceIds.contains(device.id)) continue; // Already sent
+      if (sentDeviceIds.contains(device.id)) continue;
       if (device.ipAddress == null) continue;
 
       final success = await _sendViaTcp(
@@ -150,27 +169,23 @@ class ClipboardSyncService {
       if (success) {
         sentDeviceIds.add(device.id);
       } else {
-        debugPrint('[ClipboardSync] TCP fallback failed to ${device.name} (${device.ipAddress})');
+        debugPrint('[ClipboardSync] TCP fallback failed to ${device.name}');
       }
     }
 
     if (sentDeviceIds.isEmpty) {
-      debugPrint('[ClipboardSync] WARNING: Clipboard change detected but failed to send to any device');
+      debugPrint('[ClipboardSync] Failed to send clipboard to any device');
     } else {
       debugPrint('[ClipboardSync] Broadcast sent to ${sentDeviceIds.length} device(s)');
     }
   }
 
-  /// Handle incoming clipboard message
+  /// Handle incoming clipboard message (decrypts and applies)
   Future<void> onClipboardReceived(String content, String senderId, String senderName) async {
-    // Write to system clipboard via native channel (works without Flutter focus)
     _nativeListener.markAsRemote(content);
     await _nativeListener.setClipboard(content);
-
-    // Prevent echo
     _lastClipboardContent = content;
 
-    // Emit to stream
     _receivedController.add(ClipboardMessage(
       content: content,
       senderId: senderId,
@@ -178,45 +193,66 @@ class ClipboardSyncService {
       timestamp: DateTime.now(),
     ));
 
-    // Save to clipboard history
     _saveToHistory(content, senderName);
   }
 
+  /// Encrypt and send clipboard via persistent socket
   Future<bool> _sendViaSocket(Socket socket, String text) async {
     try {
-      final message = jsonEncode({
+      final key = await _getOrCreateSessionKey();
+      final plainPayload = jsonEncode({
         'type': 'clipboard',
         'content': text,
         'timestamp': DateTime.now().millisecondsSinceEpoch,
       });
-      final bytes = utf8.encode(message);
-      // Protocol: [4-byte length][message]
-      final lenBytes = _intToBytes(bytes.length);
-      socket.add(lenBytes);
-      socket.add(bytes);
+
+      // Encrypt the payload
+      final encrypted = await _encryption.encryptChunk(
+        Uint8List.fromList(utf8.encode(plainPayload)),
+        key,
+      );
+
+      // Protocol: [4-byte length][1-byte flags (0x01 = encrypted)][encrypted data]
+      final totalLen = 1 + encrypted.length;
+      socket.add(_intToBytes(totalLen));
+      socket.add([0x01]); // Encrypted flag
+      socket.add(encrypted);
       await socket.flush();
       return true;
-    } catch (_) {
+    } catch (e) {
+      debugPrint('[ClipboardSync] Socket send error: $e');
       return false;
     }
   }
 
+  /// Encrypt and send clipboard via direct TCP connection
   Future<bool> _sendViaTcp(String ip, int port, String text) async {
     try {
-      // Use clipboard-specific port (transfer port + 2)
+      final key = await _getOrCreateSessionKey();
       final socket = await Socket.connect(ip, port + 2, timeout: const Duration(seconds: 5));
-      final message = jsonEncode({
+
+      final plainPayload = jsonEncode({
         'type': 'clipboard',
         'content': text,
         'timestamp': DateTime.now().millisecondsSinceEpoch,
       });
-      final bytes = utf8.encode(message);
-      socket.add(_intToBytes(bytes.length));
-      socket.add(bytes);
+
+      // Encrypt
+      final encrypted = await _encryption.encryptChunk(
+        Uint8List.fromList(utf8.encode(plainPayload)),
+        key,
+      );
+
+      // Protocol: [4-byte length][1-byte flags (0x01 = encrypted)][encrypted data]
+      final totalLen = 1 + encrypted.length;
+      socket.add(_intToBytes(totalLen));
+      socket.add([0x01]); // Encrypted flag
+      socket.add(encrypted);
       await socket.flush();
       await socket.close();
       return true;
-    } catch (_) {
+    } catch (e) {
+      debugPrint('[ClipboardSync] TCP send error to $ip: $e');
       return false;
     }
   }
@@ -228,8 +264,10 @@ class ClipboardSyncService {
       final server = await ServerSocket.bind(InternetAddress.anyIPv4, port + 2);
       _isListening = true;
       server.listen(_handleIncoming);
+      debugPrint('[ClipboardSync] Server started on port ${port + 2}');
       return server;
-    } catch (_) {
+    } catch (e) {
+      debugPrint('[ClipboardSync] Failed to start server: $e');
       return null;
     }
   }
@@ -241,21 +279,45 @@ class ClipboardSyncService {
         data.addAll(chunk);
       }
 
-      if (data.length < 4) { socket.destroy(); return; }
+      if (data.length < 5) { socket.destroy(); return; }
 
       final msgLen = _bytesToInt(data.sublist(0, 4));
-      final msgBytes = data.sublist(4, 4 + msgLen);
-      final json = jsonDecode(utf8.decode(msgBytes)) as Map<String, dynamic>;
+      if (data.length < 4 + msgLen) { socket.destroy(); return; }
+
+      final flags = data[4];
+      final payload = data.sublist(5, 4 + msgLen);
+
+      Map<String, dynamic> json;
+
+      if (flags == 0x01) {
+        // Encrypted message — decrypt
+        final key = await _getOrCreateSessionKey();
+        final decrypted = await _encryption.decryptChunk(
+          Uint8List.fromList(payload),
+          key,
+        );
+        json = jsonDecode(utf8.decode(decrypted)) as Map<String, dynamic>;
+      } else {
+        // Legacy unencrypted message (backward compatibility)
+        json = jsonDecode(utf8.decode(payload)) as Map<String, dynamic>;
+      }
 
       if (json['type'] == 'clipboard') {
         final content = json['content'] as String;
+        // Validate content length (max 1MB of text)
+        if (content.length > 1024 * 1024) {
+          debugPrint('[ClipboardSync] Rejected oversized clipboard content (${content.length} bytes)');
+          socket.destroy();
+          return;
+        }
         final senderId = json['deviceId'] as String? ?? socket.remoteAddress.address;
         final senderName = json['deviceName'] as String? ?? 'Unknown';
         await onClipboardReceived(content, senderId, senderName);
       }
 
       socket.destroy();
-    } catch (_) {
+    } catch (e) {
+      debugPrint('[ClipboardSync] Error handling incoming: $e');
       socket.destroy();
     }
   }
@@ -270,7 +332,9 @@ class ClipboardSyncService {
         'deviceName': senderName,
         'timestamp': DateTime.now().toIso8601String(),
       });
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('[ClipboardSync] Error saving to history: $e');
+    }
   }
 
   List<int> _intToBytes(int value) {

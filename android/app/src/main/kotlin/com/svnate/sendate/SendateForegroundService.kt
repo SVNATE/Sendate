@@ -17,7 +17,7 @@ import io.flutter.embedding.engine.dart.DartExecutor
 import io.flutter.plugin.common.MethodChannel
 
 /**
- * Persistent foreground service (KDE Connect style).
+ * Persistent foreground service.
  *
  * CRITICAL: This service maintains its own FlutterEngine so that
  * discovery, clipboard sync, and transfers keep running even when
@@ -316,7 +316,7 @@ class SendateForegroundService : Service() {
             .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
 
-        // Action buttons only when devices are connected (like KDE Connect)
+        // Action buttons only when devices are connected
         if (deviceNames.isNotEmpty()) {
             val clipboardIntent = Intent(this, SendateForegroundService::class.java)
             clipboardIntent.action = ACTION_SEND_CLIPBOARD

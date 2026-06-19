@@ -1,17 +1,23 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:hive/hive.dart';
 import 'package:path_provider/path_provider.dart';
 
 import '../../core/constants/app_constants.dart';
 
 /// Local HTTP server that serves an upload page.
-/// Any device with a browser can send files to this device.
+/// Any device with a browser on the local network can send files to this device.
 class BrowserReceiverService {
   HttpServer? _server;
   bool _isRunning = false;
   String? password;
+
+  /// Track failed auth attempts per IP for rate limiting
+  final Map<String, _RateLimit> _rateLimits = {};
+  static const _maxFailedAttempts = 5;
+  static const _rateLimitWindow = Duration(minutes: 1);
 
   bool get isRunning => _isRunning;
   int get port => AppConstants.browserReceiverPort;
@@ -25,8 +31,10 @@ class BrowserReceiverService {
       _server = await HttpServer.bind(InternetAddress.anyIPv4, port);
       _isRunning = true;
       _server!.listen(_handleRequest);
+      debugPrint('[BrowserReceiver] Server started on port $port (auth: ${password != null ? "enabled" : "disabled"})');
       return 'http://localhost:$port';
     } catch (e) {
+      debugPrint('[BrowserReceiver] Failed to start server: $e');
       _isRunning = false;
       return null;
     }
@@ -37,16 +45,98 @@ class BrowserReceiverService {
     _isRunning = false;
     await _server?.close(force: true);
     _server = null;
+    _rateLimits.clear();
+    debugPrint('[BrowserReceiver] Server stopped');
+  }
+
+  /// Check if an IP is rate-limited
+  bool _isRateLimited(String ip) {
+    final limit = _rateLimits[ip];
+    if (limit == null) return false;
+
+    // Reset if window has passed
+    if (DateTime.now().difference(limit.firstAttempt) > _rateLimitWindow) {
+      _rateLimits.remove(ip);
+      return false;
+    }
+
+    return limit.attempts >= _maxFailedAttempts;
+  }
+
+  /// Record a failed auth attempt
+  void _recordFailedAttempt(String ip) {
+    final existing = _rateLimits[ip];
+    if (existing == null || DateTime.now().difference(existing.firstAttempt) > _rateLimitWindow) {
+      _rateLimits[ip] = _RateLimit(firstAttempt: DateTime.now(), attempts: 1);
+    } else {
+      existing.attempts++;
+    }
+  }
+
+  /// Validate the auth token from a request
+  bool _isAuthenticated(HttpRequest request) {
+    if (password == null || password!.isEmpty) return true;
+
+    // Check X-Auth-Token header
+    final token = request.headers.value('x-auth-token');
+    if (token != null && token == password) return true;
+
+    // Check Authorization: Bearer <token>
+    final auth = request.headers.value('authorization');
+    if (auth != null && auth.startsWith('Bearer ') && auth.substring(7) == password) return true;
+
+    return false;
+  }
+
+  /// Validate file name to prevent path traversal attacks
+  String? _sanitizeFileName(String fileName) {
+    // Remove path separators and parent directory references
+    final sanitized = fileName
+        .replaceAll('/', '_')
+        .replaceAll('\\', '_')
+        .replaceAll('..', '_')
+        .replaceAll('\x00', '') // null bytes
+        .trim();
+
+    // Reject empty or hidden files
+    if (sanitized.isEmpty || sanitized.startsWith('.')) return null;
+
+    // Limit file name length
+    if (sanitized.length > 255) return sanitized.substring(0, 255);
+
+    return sanitized;
   }
 
   void _handleRequest(HttpRequest request) async {
-    // CORS headers
-    request.response.headers.add('Access-Control-Allow-Origin', '*');
+    final clientIp = request.connectionInfo?.remoteAddress.address ?? 'unknown';
+
+    // Security headers
+    request.response.headers.add('X-Frame-Options', 'DENY');
+    request.response.headers.add('X-Content-Type-Options', 'nosniff');
+    request.response.headers.add('Referrer-Policy', 'no-referrer');
+
+    // CORS — restrict to same-origin (local network)
+    final origin = request.headers.value('origin');
+    if (origin != null) {
+      // Only allow origins from private IP ranges
+      final originUri = Uri.tryParse(origin);
+      if (originUri != null && _isLocalOrigin(originUri.host)) {
+        request.response.headers.add('Access-Control-Allow-Origin', origin);
+      }
+    }
     request.response.headers.add('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-    request.response.headers.add('Access-Control-Allow-Headers', '*');
+    request.response.headers.add('Access-Control-Allow-Headers', 'Content-Type, X-Auth-Token, Authorization');
 
     if (request.method == 'OPTIONS') {
       request.response.statusCode = 200;
+      await request.response.close();
+      return;
+    }
+
+    // Rate limiting check
+    if (_isRateLimited(clientIp)) {
+      request.response.statusCode = 429;
+      request.response.write('Too many failed attempts. Try again later.');
       await request.response.close();
       return;
     }
@@ -56,12 +146,16 @@ class BrowserReceiverService {
     if (path == '/' && request.method == 'GET') {
       _serveUploadPage(request);
     } else if (path == '/upload' && request.method == 'POST') {
-      await _handleUpload(request);
+      await _handleUpload(request, clientIp);
     } else if (path == '/status' && request.method == 'GET') {
       request.response
         ..statusCode = 200
         ..headers.contentType = ContentType.json
-        ..write(jsonEncode({'status': 'ready', 'name': 'Sendate'}));
+        ..write(jsonEncode({
+          'status': 'ready',
+          'name': 'Sendate',
+          'authRequired': password != null && password!.isNotEmpty,
+        }));
       await request.response.close();
     } else {
       request.response.statusCode = 404;
@@ -70,15 +164,40 @@ class BrowserReceiverService {
     }
   }
 
+  /// Check if a hostname is a local/private IP
+  bool _isLocalOrigin(String host) {
+    if (host == 'localhost' || host == '127.0.0.1') return true;
+    // Private IPv4 ranges
+    if (host.startsWith('192.168.') || host.startsWith('10.') || host.startsWith('172.')) return true;
+    // Link-local
+    if (host.startsWith('169.254.')) return true;
+    return false;
+  }
+
   void _serveUploadPage(HttpRequest request) {
+    final hasPassword = password != null && password!.isNotEmpty;
     request.response
       ..statusCode = 200
       ..headers.contentType = ContentType.html
-      ..write(_uploadHtml);
+      ..write(_getUploadHtml(hasPassword));
     request.response.close();
   }
 
-  Future<void> _handleUpload(HttpRequest request) async {
+  Future<void> _handleUpload(HttpRequest request, String clientIp) async {
+    // Authentication check
+    if (!_isAuthenticated(request)) {
+      _recordFailedAttempt(clientIp);
+      debugPrint('[BrowserReceiver] Unauthorized upload attempt from $clientIp');
+      request.response.statusCode = 401;
+      request.response.headers.add('WWW-Authenticate', 'Bearer');
+      request.response.write(jsonEncode({
+        'success': false,
+        'error': 'Unauthorized. Invalid or missing authentication.',
+      }));
+      await request.response.close();
+      return;
+    }
+
     try {
       final contentType = request.headers.contentType;
       if (contentType == null || contentType.mimeType != 'multipart/form-data') {
@@ -107,12 +226,20 @@ class BrowserReceiverService {
         final fileNameMatch = RegExp(r'filename="([^"]+)"').firstMatch(disposition);
         if (fileNameMatch == null) continue;
 
-        final fileName = fileNameMatch.group(1)!;
+        final rawFileName = fileNameMatch.group(1)!;
+        final fileName = _sanitizeFileName(rawFileName);
+        if (fileName == null) {
+          debugPrint('[BrowserReceiver] Rejected unsafe filename: $rawFileName');
+          continue;
+        }
+
         final filePath = '$savePath/$fileName';
         final file = File(filePath);
         await file.writeAsBytes(part.data);
         savedFiles.add(fileName);
       }
+
+      debugPrint('[BrowserReceiver] Received ${savedFiles.length} file(s) from $clientIp');
 
       request.response
         ..statusCode = 200
@@ -124,8 +251,9 @@ class BrowserReceiverService {
         }));
       await request.response.close();
     } catch (e) {
+      debugPrint('[BrowserReceiver] Upload error from $clientIp: $e');
       request.response.statusCode = 500;
-      request.response.write('Error: $e');
+      request.response.write(jsonEncode({'success': false, 'error': 'Server error'}));
       await request.response.close();
     }
   }
@@ -139,12 +267,14 @@ class BrowserReceiverService {
         final dir = Directory('/storage/emulated/0/Download');
         if (await dir.exists()) return dir.path;
       }
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('[BrowserReceiver] Error resolving save dir: $e');
+    }
     final appDir = await getApplicationDocumentsDirectory();
     return appDir.path;
   }
 
-  static const _uploadHtml = '''
+  String _getUploadHtml(bool authRequired) => '''
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -162,6 +292,8 @@ h1{font-size:24px;font-weight:700;margin-bottom:8px;color:#fff}
 .drop-zone svg{width:48px;height:48px;margin-bottom:16px;color:#6366f1}
 .drop-zone p{color:#94a3b8;font-size:14px}
 input[type=file]{display:none}
+.password-field{width:100%;padding:12px 16px;border:1px solid #2d2e5e;border-radius:12px;font-size:14px;background:#0f0f23;color:#e2e8f0;margin-bottom:16px;outline:none}
+.password-field:focus{border-color:#6366f1}
 .btn{display:block;width:100%;padding:14px;border:none;border-radius:12px;font-size:16px;font-weight:600;cursor:pointer;background:#6366f1;color:#fff;transition:all .2s}
 .btn:hover{background:#4f46e5}
 .btn:disabled{opacity:.5;cursor:not-allowed}
@@ -176,6 +308,7 @@ input[type=file]{display:none}
 <div class="container">
 <h1>Sendate</h1>
 <p class="subtitle">Drop files here to send to this device</p>
+${authRequired ? '<input type="password" class="password-field" id="passwordField" placeholder="Enter password to upload">' : ''}
 <div class="drop-zone" id="dropZone" onclick="fileInput.click()">
 <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5"/></svg>
 <p>Click or drag files here</p>
@@ -188,6 +321,7 @@ input[type=file]{display:none}
 </div>
 <script>
 const dropZone=document.getElementById('dropZone'),fileInput=document.getElementById('fileInput'),fileList=document.getElementById('fileList'),sendBtn=document.getElementById('sendBtn'),status=document.getElementById('status'),progress=document.getElementById('progress'),progressBar=document.getElementById('progressBar');
+const passwordField=document.getElementById('passwordField');
 let selectedFiles=[];
 dropZone.addEventListener('dragover',e=>{e.preventDefault();dropZone.classList.add('active')});
 dropZone.addEventListener('dragleave',()=>dropZone.classList.remove('active'));
@@ -198,8 +332,9 @@ function formatSize(b){if(b<1024)return b+' B';if(b<1048576)return(b/1024).toFix
 async function uploadFiles(){if(!selectedFiles.length)return;sendBtn.disabled=true;progress.style.display='block';
 const fd=new FormData();selectedFiles.forEach(f=>fd.append('files',f,f.name));
 try{const xhr=new XMLHttpRequest();xhr.open('POST','/upload');
+if(passwordField){xhr.setRequestHeader('X-Auth-Token',passwordField.value)}
 xhr.upload.onprogress=e=>{if(e.lengthComputable)progressBar.style.width=(e.loaded/e.total*100)+'%'};
-xhr.onload=()=>{if(xhr.status===200){status.textContent='Files sent successfully!';status.style.display='block';status.style.color='#22c55e';selectedFiles=[];fileList.innerHTML=''}else{status.textContent='Error: '+xhr.responseText;status.style.display='block';status.style.color='#ef4444'}sendBtn.disabled=false};
+xhr.onload=()=>{if(xhr.status===200){status.textContent='Files sent successfully!';status.style.display='block';status.style.color='#22c55e';selectedFiles=[];fileList.innerHTML=''}else if(xhr.status===401){status.textContent='Authentication failed. Check password.';status.style.display='block';status.style.color='#ef4444'}else if(xhr.status===429){status.textContent='Too many failed attempts. Wait and try again.';status.style.display='block';status.style.color='#ef4444'}else{status.textContent='Error: '+xhr.responseText;status.style.display='block';status.style.color='#ef4444'}sendBtn.disabled=false};
 xhr.onerror=()=>{status.textContent='Network error';status.style.display='block';status.style.color='#ef4444';sendBtn.disabled=false};
 xhr.send(fd)}catch(e){status.textContent='Error: '+e;status.style.display='block';status.style.color='#ef4444';sendBtn.disabled=false}}
 </script>
@@ -271,4 +406,10 @@ class MimeMultipart {
   final Map<String, String> headers;
   final List<int> data;
   MimeMultipart(this.headers, this.data);
+}
+
+class _RateLimit {
+  final DateTime firstAttempt;
+  int attempts;
+  _RateLimit({required this.firstAttempt, required this.attempts});
 }

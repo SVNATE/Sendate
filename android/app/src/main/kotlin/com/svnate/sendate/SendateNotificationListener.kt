@@ -22,8 +22,7 @@ import java.io.ByteArrayOutputStream
  * NotificationListenerService that captures notifications from all apps
  * and forwards them to connected devices via the background Dart engine.
  *
- * Similar to KDE Connect's NotificationReceiver — mirrors phone notifications
- * to the connected desktop/laptop.
+ * Mirrors phone notifications to the connected desktop/laptop.
  */
 class SendateNotificationListener : NotificationListenerService() {
 

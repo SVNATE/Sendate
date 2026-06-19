@@ -7,7 +7,7 @@ import android.os.Build
 
 /**
  * Starts Sendate foreground service on device boot.
- * Like KDE Connect, ensures the service is always running so devices
+ * Ensures the service is always running so devices
  * can be discovered and clipboard sync works immediately.
  */
 class BootReceiver : BroadcastReceiver() {

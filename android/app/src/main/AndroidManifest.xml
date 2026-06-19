@@ -82,7 +82,7 @@
             android:name="flutterEmbedding"
             android:value="2" />
 
-        <!-- Sendate Foreground Service (KDE Connect style) -->
+        <!-- Sendate Foreground Service -->
         <service
             android:name=".SendateForegroundService"
             android:enabled="true"
