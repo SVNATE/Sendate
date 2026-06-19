@@ -6,6 +6,7 @@ import 'package:hive/hive.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../core/constants/app_constants.dart';
+import '../../core/utils/logger.dart';
 
 /// Message model
 class Message {
@@ -59,6 +60,7 @@ class Message {
 class MessagingService {
   static const _messagesBox = 'messages';
   static const _pendingBox = 'pending_messages';
+  final _log = const AppLogger('Messaging');
   final _messageController = StreamController<Message>.broadcast();
 
   Stream<Message> get messageStream => _messageController.stream;
@@ -139,7 +141,8 @@ class MessagingService {
       final server = await ServerSocket.bind(InternetAddress.anyIPv4, port + 1);
       server.listen(_handleIncoming);
       return server;
-    } catch (_) {
+    } catch (e) {
+      _log.debug('Message server bind failed on port ${port + 1}: $e');
       return null;
     }
   }
@@ -159,7 +162,8 @@ class MessagingService {
         await socket.flush();
       }
       socket.destroy();
-    } catch (_) {
+    } catch (e) {
+      _log.debug('Incoming message handling failed: $e');
       socket.destroy();
     }
   }
@@ -175,7 +179,8 @@ class MessagingService {
       await socket.flush();
       await socket.close();
       return true;
-    } catch (_) {
+    } catch (e) {
+      _log.debug('Message delivery failed to $ip:${port + 1}: $e');
       return false;
     }
   }

@@ -3,9 +3,12 @@ import 'dart:io';
 import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:path_provider/path_provider.dart';
 
+import '../../core/utils/logger.dart';
+
 /// Smart Compatibility Engine.
 /// Detects and converts incompatible file formats between platforms.
 class ConversionService {
+  final _log = const AppLogger('Conversion');
   /// Check if a file needs conversion for the target platform
   ConversionNeeded checkCompatibility({
     required String mimeType,
@@ -108,7 +111,8 @@ class ConversionService {
         await inputFile.copy(outputFile.path);
         return outputFile.path;
       }
-    } catch (_) {
+    } catch (e) {
+      _log.debug('File conversion failed for $inputPath: $e');
       // If conversion fails, fall through to return original
     }
 

@@ -5,12 +5,14 @@ import 'dart:io';
 import 'package:flutter/services.dart';
 import 'package:uuid/uuid.dart';
 
+import '../../core/utils/logger.dart';
 import '../../shared/models/transfer_model.dart';
 
 /// Bluetooth RFCOMM file transfer service.
 /// Transfers files over Bluetooth Classic when WiFi is unavailable.
 class BluetoothTransferService {
   static const _channel = MethodChannel('com.svnate.sendate/bt_transfer');
+  final _log = const AppLogger('BluetoothTransfer');
   final _transferController = StreamController<TransferModel>.broadcast();
   static const int _btChunkSize = 16384; // 16KB chunks for BT (slower than WiFi)
 
@@ -115,7 +117,9 @@ class BluetoothTransferService {
     try {
       _channel.setMethodCallHandler(_handleIncoming);
       await _channel.invokeMethod('startServer');
-    } catch (_) {}
+    } catch (e) {
+      _log.debug('startServer failed: $e');
+    }
   }
 
   Future<dynamic> _handleIncoming(MethodCall call) async {

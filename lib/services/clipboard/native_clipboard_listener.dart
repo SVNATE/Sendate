@@ -3,10 +3,13 @@ import 'dart:io';
 
 import 'package:flutter/services.dart';
 
+import '../../core/utils/logger.dart';
+
 /// Native clipboard listener that works even when Flutter window is NOT focused.
 /// Uses platform channels to get real system clipboard changes from ANY app.
 class NativeClipboardListener {
   static const _channel = MethodChannel('com.svnate.sendate/native_clipboard');
+  final _log = const AppLogger('NativeClipboard');
   final _changeController = StreamController<String>.broadcast();
   String? _lastContent;
   Timer? _linuxTimer;
@@ -46,7 +49,8 @@ class NativeClipboardListener {
     _lastContent = text; // Prevent echo
     try {
       await _channel.invokeMethod('setClipboard', text);
-    } catch (_) {
+    } catch (e) {
+      _log.debug('setClipboard via channel failed, using fallback: $e');
       // Fallback to Flutter clipboard
       await Clipboard.setData(ClipboardData(text: text));
     }
@@ -57,7 +61,8 @@ class NativeClipboardListener {
     try {
       final result = await _channel.invokeMethod<String>('getClipboard');
       return result ?? '';
-    } catch (_) {
+    } catch (e) {
+      _log.debug('getClipboard via channel failed, using fallback: $e');
       final data = await Clipboard.getData(Clipboard.kTextPlain);
       return data?.text ?? '';
     }
@@ -84,7 +89,7 @@ class NativeClipboardListener {
           _lastContent = text;
           _changeController.add(text);
         }
-      } catch (_) {
+      } catch (e) {
         // Try xsel as fallback
         try {
           final result = await Process.run('xsel', ['--clipboard', '--output']);
@@ -93,7 +98,9 @@ class NativeClipboardListener {
             _lastContent = text;
             _changeController.add(text);
           }
-        } catch (_) {}
+        } catch (e2) {
+          _log.debug('Linux clipboard polling failed: $e2');
+        }
       }
     });
   }
@@ -111,7 +118,9 @@ class NativeClipboardListener {
           _lastContent = text;
           _changeController.add(text);
         }
-      } catch (_) {}
+      } catch (e) {
+        _log.debug('Windows clipboard polling failed: $e');
+      }
     });
   }
 

@@ -2,12 +2,14 @@ import 'dart:async';
 
 import 'package:flutter/services.dart';
 
+import '../../core/utils/logger.dart';
 import '../../shared/models/device_model.dart';
 
 /// Bluetooth device discovery and connection service.
 /// Uses platform channels for Bluetooth Classic scanning.
 class BluetoothService {
   static const _channel = MethodChannel('com.svnate.sendate/bluetooth');
+  final _log = const AppLogger('Bluetooth');
   final _devicesController = StreamController<List<DeviceModel>>.broadcast();
   final Map<String, DeviceModel> _discovered = {};
   bool _isScanning = false;
@@ -21,7 +23,8 @@ class BluetoothService {
     try {
       final result = await _channel.invokeMethod<bool>('isAvailable');
       return result ?? false;
-    } catch (_) {
+    } catch (e) {
+      _log.debug('isAvailable check failed: $e');
       return false;
     }
   }
@@ -45,7 +48,9 @@ class BluetoothService {
     _isScanning = false;
     try {
       await _channel.invokeMethod('stopScan');
-    } catch (_) {}
+    } catch (e) {
+      _log.debug('stopScan failed: $e');
+    }
   }
 
   Future<dynamic> _handleMethodCall(MethodCall call) async {

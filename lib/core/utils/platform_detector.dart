@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:device_info_plus/device_info_plus.dart';
+import 'package:flutter/foundation.dart';
 
 /// Detects if the device is a TV form factor.
 class PlatformDetector {
@@ -20,7 +21,8 @@ class PlatformDetector {
       final features = info.systemFeatures;
       _isTV = features.contains('android.software.leanback') ||
           features.contains('android.hardware.type.television');
-    } catch (_) {
+    } catch (e) {
+      debugPrint('[PlatformDetector] TV detection failed: $e');
       _isTV = false;
     }
 

@@ -1,9 +1,12 @@
 import 'dart:io';
 
+import '../../core/utils/logger.dart';
+
 /// Platform-specific firewall and connectivity helpers.
 /// Addresses the common issue of Windows devices not connecting
 /// because firewall blocks UDP broadcast on unknown ports.
 class FirewallHelper {
+  static final _log = const AppLogger('Firewall');
   /// Check if we're on Windows and offer firewall fix
   static bool get isWindows => Platform.isWindows;
   static bool get isMacOS => Platform.isMacOS;
@@ -94,7 +97,8 @@ class FirewallHelper {
         'protocol=UDP', 'localport=53317-53320',
       ]);
       return true;
-    } catch (_) {
+    } catch (e) {
+      _log.debug('Windows firewall auto-fix failed: $e');
       return false;
     }
   }
@@ -107,7 +111,8 @@ class FirewallHelper {
       await Process.run('sudo', ['ufw', 'allow', '53317:53320/tcp']);
       await Process.run('sudo', ['ufw', 'allow', '53317:53320/udp']);
       return true;
-    } catch (_) {
+    } catch (e) {
+      _log.debug('Linux firewall auto-fix failed: $e');
       return false;
     }
   }

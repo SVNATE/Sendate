@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 import 'package:hive/hive.dart';
 
 import '../../core/constants/app_constants.dart';
+import '../../core/utils/logger.dart';
 import '../../shared/models/device_model.dart';
 
 /// Represents a captured notification from the Android phone.
@@ -104,6 +105,7 @@ class NotificationAction {
 class NotificationSyncService {
   static const _notificationChannel =
       MethodChannel('com.svnate.sendate/notification_listener');
+  final _log = const AppLogger('NotificationSync');
 
   final _receivedNotificationsController =
       StreamController<SyncedNotification>.broadcast();
@@ -160,7 +162,8 @@ class NotificationSyncService {
       final result =
           await _notificationChannel.invokeMethod<bool>('isPermissionGranted');
       return result ?? false;
-    } catch (_) {
+    } catch (e) {
+      _log.debug('isPermissionGranted check failed: $e');
       return false;
     }
   }
@@ -170,7 +173,9 @@ class NotificationSyncService {
     if (!Platform.isAndroid) return;
     try {
       await _notificationChannel.invokeMethod('openPermissionSettings');
-    } catch (_) {}
+    } catch (e) {
+      _log.debug('openPermissionSettings failed: $e');
+    }
   }
 
   /// Register a connected device socket for forwarding notifications
@@ -277,7 +282,8 @@ class NotificationSyncService {
     for (final socket in List.of(_connectedSockets)) {
       try {
         socket.add(bytes);
-      } catch (_) {
+      } catch (e) {
+        _log.debug('Socket broadcast failed: $e');
         // Socket likely disconnected, will be cleaned up by connection service
       }
     }
@@ -300,7 +306,8 @@ class NotificationSyncService {
         socket.add(utf8.encode('$message\n'));
         await socket.flush();
         await socket.close();
-      } catch (_) {
+      } catch (e) {
+        _log.debug('Fallback send to ${device.name} failed: $e');
         // Device unreachable via fallback — not critical
       }
     }
@@ -354,7 +361,9 @@ class NotificationSyncService {
           final id = json['id'] as String? ?? '';
           onRemoteNotificationRemoved(id);
       }
-    } catch (_) {}
+    } catch (e) {
+      _log.debug('Failed to process incoming message: $e');
+    }
   }
 
   void _saveToHistory(SyncedNotification notification) {
@@ -370,7 +379,9 @@ class NotificationSyncService {
         'timestamp': DateTime.fromMillisecondsSinceEpoch(notification.timestamp)
             .toIso8601String(),
       });
-    } catch (_) {}
+    } catch (e) {
+      _log.debug('Failed to save notification to history: $e');
+    }
   }
 
   void dispose() {

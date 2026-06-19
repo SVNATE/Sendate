@@ -3,10 +3,12 @@ import 'dart:io';
 import 'package:hive/hive.dart';
 
 import '../../core/constants/app_constants.dart';
+import '../../core/utils/logger.dart';
 
 /// Manages auto-deletion of received files after configured expiry.
 class TransferExpiryService {
   static const _expiryBox = 'file_expiry';
+  final _log = const AppLogger('TransferExpiry');
 
   /// Register a received file with expiry
   Future<void> registerFile(String filePath, Duration expiry) async {
@@ -43,7 +45,9 @@ class TransferExpiryService {
             await file.delete();
             deletedCount++;
           }
-        } catch (_) {}
+        } catch (e) {
+          _log.debug('Failed to delete expired file $key: $e');
+        }
         keysToRemove.add(key);
       }
     }

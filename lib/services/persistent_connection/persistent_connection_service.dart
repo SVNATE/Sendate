@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import '../../core/utils/logger.dart';
 import '../../shared/models/device_model.dart';
 import '../clipboard/clipboard_sync_service.dart';
 import '../notification_sync/notification_sync_service.dart';
@@ -27,6 +28,7 @@ class DeviceConnection {
 /// Maintains persistent TCP connections to trusted devices.
 /// Handles heartbeat, auto-reconnect, and routes clipboard/message data.
 class PersistentConnectionService {
+  final _log = const AppLogger('PersistentConn');
   final Map<String, DeviceConnection> _connections = {};
   final _stateController = StreamController<Map<String, DeviceConnection>>.broadcast();
   Timer? _heartbeatTimer;
@@ -53,7 +55,9 @@ class PersistentConnectionService {
     try {
       _server = await ServerSocket.bind(InternetAddress.anyIPv4, _persistentPort);
       _server!.listen(_handleIncomingConnection);
-    } catch (_) {}
+    } catch (e) {
+      _log.debug('Server bind failed on port $_persistentPort: $e');
+    }
 
     // Start heartbeat checker
     _heartbeatTimer = Timer.periodic(_heartbeatInterval, (_) => _sendHeartbeats());
@@ -123,7 +127,8 @@ class PersistentConnectionService {
       _listenOnSocket(device.id, socket);
 
       return true;
-    } catch (_) {
+    } catch (e) {
+      _log.debug('Device connection failed (${device.name}): $e');
       _connections[device.id] = DeviceConnection(
         device: device,
         state: ConnectionState.disconnected,
@@ -183,7 +188,8 @@ class PersistentConnectionService {
           _scheduleReconnect(entry.key);
         }
       },
-      onError: (_) {
+      onError: (e) {
+        _log.debug('Incoming connection error: $e');
         socket.destroy();
       },
     );
@@ -211,7 +217,9 @@ class PersistentConnectionService {
         _emit();
         _scheduleReconnect(deviceId);
       },
-      onError: (_) {},
+      onError: (e) {
+        _log.debug('Socket listen error for device $deviceId: $e');
+      },
     );
   }
 
@@ -263,7 +271,9 @@ class PersistentConnectionService {
             notificationSyncService?.onRemoteNotificationRemoved(notifId);
           }
       }
-    } catch (_) {}
+    } catch (e) {
+      _log.debug('Message processing failed: $e');
+    }
   }
 
   void _sendHeartbeats() {
@@ -271,7 +281,8 @@ class PersistentConnectionService {
       if (entry.value.state == ConnectionState.connected && entry.value.socket != null) {
         try {
           entry.value.socket!.add(utf8.encode('{"type":"heartbeat"}\n'));
-        } catch (_) {
+        } catch (e) {
+          _log.debug('Heartbeat send failed for ${entry.key}: $e');
           entry.value.state = ConnectionState.disconnected;
           entry.value.socket = null;
           clipboardService?.removeConnectedDevice(entry.key);

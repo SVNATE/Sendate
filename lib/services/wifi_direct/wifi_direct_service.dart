@@ -2,12 +2,14 @@ import 'dart:async';
 
 import 'package:flutter/services.dart';
 
+import '../../core/utils/logger.dart';
 import '../../shared/models/device_model.dart';
 
 /// WiFi Direct (P2P) service for direct device-to-device connections
 /// without a shared router or hotspot.
 class WifiDirectService {
   static const _channel = MethodChannel('com.svnate.sendate/wifi_direct');
+  final _log = const AppLogger('WifiDirect');
   final _peersController = StreamController<List<DeviceModel>>.broadcast();
   final Map<String, DeviceModel> _peers = {};
   bool _isDiscovering = false;
@@ -23,7 +25,8 @@ class WifiDirectService {
     try {
       final result = await _channel.invokeMethod<bool>('isAvailable');
       return result ?? false;
-    } catch (_) {
+    } catch (e) {
+      _log.debug('isAvailable check failed: $e');
       return false;
     }
   }
@@ -47,7 +50,9 @@ class WifiDirectService {
     _isDiscovering = false;
     try {
       await _channel.invokeMethod('stopDiscovery');
-    } catch (_) {}
+    } catch (e) {
+      _log.debug('stopDiscovery failed: $e');
+    }
   }
 
   /// Connect to a WiFi Direct peer
@@ -57,7 +62,8 @@ class WifiDirectService {
         'address': deviceAddress,
       });
       return result ?? false;
-    } catch (_) {
+    } catch (e) {
+      _log.debug('connect to $deviceAddress failed: $e');
       return false;
     }
   }
@@ -67,7 +73,9 @@ class WifiDirectService {
     try {
       await _channel.invokeMethod('disconnect');
       _groupOwnerIp = null;
-    } catch (_) {}
+    } catch (e) {
+      _log.debug('disconnect failed: $e');
+    }
   }
 
   Future<dynamic> _handleMethodCall(MethodCall call) async {

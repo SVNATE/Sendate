@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:permission_handler/permission_handler.dart';
 
@@ -146,7 +147,9 @@ class DiscoveryController {
         Permission.bluetoothConnect,
         Permission.locationWhenInUse,
       ].request();
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('[DiscoveryProvider] Bluetooth permission request failed: $e');
+    }
   }
 
   /// Stop Bluetooth scanning

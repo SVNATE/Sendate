@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import '../../core/constants/app_constants.dart';
+import '../../core/utils/logger.dart';
 import '../../shared/models/device_model.dart';
 import '../network/network_service.dart';
 
@@ -12,6 +13,7 @@ import '../network/network_service.dart';
 /// 3. Multicast group (224.0.0.167)
 /// 4. Multiple interface scanning
 class DiscoveryService {
+  final _log = const AppLogger('Discovery');
   RawDatagramSocket? _broadcastSocket;
   RawDatagramSocket? _multicastSocket;
   Timer? _announceTimer;
@@ -101,7 +103,9 @@ class DiscoveryService {
           if (dg != null) _processDatagram(dg);
         }
       });
-    } catch (_) {}
+    } catch (e) {
+      _log.debug('Multicast socket bind failed: $e');
+    }
   }
 
   /// Stop discovery
@@ -115,7 +119,9 @@ class DiscoveryService {
     _broadcastSocket = null;
     try {
       _multicastSocket?.leaveMulticast(InternetAddress(_multicastGroup));
-    } catch (_) {}
+    } catch (e) {
+      _log.debug('Multicast leave failed: $e');
+    }
     _multicastSocket?.close();
     _multicastSocket = null;
     _discovered.clear();
@@ -167,7 +173,9 @@ class DiscoveryService {
           final subnetBroadcast = '${parts[0]}.${parts[1]}.${parts[2]}.255';
           try {
             _broadcastSocket?.send(data, InternetAddress(subnetBroadcast), AppConstants.discoveryPort);
-          } catch (_) {}
+          } catch (e) {
+            _log.debug('Subnet broadcast send failed ($subnetBroadcast): $e');
+          }
         }
       }
     });
@@ -176,14 +184,18 @@ class DiscoveryService {
     if (_broadcastSocket != null) {
       try {
         _broadcastSocket!.send(data, InternetAddress('255.255.255.255'), AppConstants.discoveryPort);
-      } catch (_) {}
+      } catch (e) {
+        _log.debug('Global broadcast send failed: $e');
+      }
     }
 
     // Multicast
     if (_multicastSocket != null) {
       try {
         _multicastSocket!.send(data, InternetAddress(_multicastGroup), AppConstants.discoveryPort + 1);
-      } catch (_) {}
+      } catch (e) {
+        _log.debug('Multicast send failed: $e');
+      }
     }
 
     // Common hotspot subnets (cover all Android hotspot variants)
@@ -195,7 +207,9 @@ class DiscoveryService {
       ]) {
         try {
           _broadcastSocket!.send(data, InternetAddress(subnet), AppConstants.discoveryPort);
-        } catch (_) {}
+        } catch (e) {
+          _log.debug('Hotspot subnet broadcast failed ($subnet): $e');
+        }
       }
     }
 
@@ -204,7 +218,9 @@ class DiscoveryService {
       if (gw != null && _broadcastSocket != null) {
         try {
           _broadcastSocket!.send(data, InternetAddress(gw), AppConstants.discoveryPort);
-        } catch (_) {}
+        } catch (e) {
+          _log.debug('Gateway unicast send failed ($gw): $e');
+        }
       }
     });
   }
@@ -220,7 +236,9 @@ class DiscoveryService {
 
       // Send announce packet directly to the gateway IP via unicast UDP
       _probeDirectIp(gatewayIp);
-    } catch (_) {}
+    } catch (e) {
+      _log.debug('Gateway probe failed: $e');
+    }
 
     // Also probe common hardcoded gateways as fallback
     for (final gwIp in ['192.168.43.1', '192.168.49.1', '172.20.10.1']) {
@@ -246,7 +264,9 @@ class DiscoveryService {
 
     try {
       _broadcastSocket!.send(utf8.encode(packet), InternetAddress(ip), AppConstants.discoveryPort);
-    } catch (_) {}
+    } catch (e) {
+      _log.debug('Direct probe send failed ($ip): $e');
+    }
   }
 
   void _processDatagram(Datagram datagram) {
@@ -278,7 +298,9 @@ class DiscoveryService {
       );
 
       _devicesController.add(currentDevices);
-    } catch (_) {}
+    } catch (e) {
+      _log.debug('Datagram processing failed: $e');
+    }
   }
 
   void _cleanupStale() {

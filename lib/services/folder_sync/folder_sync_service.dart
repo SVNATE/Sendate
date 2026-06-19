@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:crypto/crypto.dart' as crypto_pkg;
 import 'package:hive/hive.dart';
 
+import '../../core/utils/logger.dart';
 import '../../shared/models/device_model.dart';
 import '../transfer/transfer_service.dart';
 
@@ -50,6 +51,7 @@ class FolderSyncConfig {
 /// Folder sync service — watches a local folder and syncs changes to a target device.
 class FolderSyncService {
   static const _boxName = 'folder_sync';
+  final _log = const AppLogger('FolderSync');
   final Map<String, StreamSubscription> _watchers = {};
   final Map<String, Timer> _scheduledSyncs = {};
   TransferService? transferService;
@@ -143,7 +145,8 @@ class FolderSyncService {
       try {
         await _syncFile(config, entity.path);
         synced++;
-      } catch (_) {
+      } catch (e) {
+        _log.debug('Failed to sync file ${entity.path}: $e');
         errors++;
       }
     }

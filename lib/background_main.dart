@@ -266,7 +266,8 @@ class _BackgroundService {
           .map((key) => key.toString())
           .where((id) => id.isNotEmpty)
           .toList();
-    } catch (_) {
+    } catch (e) {
+      debugPrint('[BackgroundMain] Failed to load trusted device IDs: $e');
       return [];
     }
   }

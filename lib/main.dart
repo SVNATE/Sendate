@@ -63,7 +63,9 @@ void main() async {
   // Initialize notifications
   try {
     await NotificationService.init();
-  } catch (_) {}
+  } catch (e) {
+    debugPrint('[Main] Notification init failed: $e');
+  }
 
   // Background service disabled — causes crash on Android 14+ without proper foreground service type
   // The app works fine without it: discovery and clipboard run while app is open
@@ -83,7 +85,8 @@ void main() async {
     await trayService.init();
     trayService.onOpenApp = () async {};
     trayService.onQuit = () => exit(0);
-  } catch (_) {
+  } catch (e) {
+    debugPrint('[Main] System tray init failed: $e');
     trayService = null;
   }
 
@@ -160,7 +163,9 @@ class _SendateAppState extends ConsumerState<SendateApp> {
                 );
               }
             }
-          } catch (_) {}
+          } catch (e) {
+            debugPrint('[Main] Tray send files error: $e');
+          }
         }
       };
 

@@ -254,7 +254,9 @@ class SystemTrayService with TrayListener, WindowListener {
         'setDockIconVisible',
         visible,
       );
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('[SystemTray] setDockIconVisible failed: $e');
+    }
   }
 
   void _quitApp() {

@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive/hive.dart';
 
@@ -35,7 +36,8 @@ class TrustedDevicesNotifier extends StateNotifier<List<DeviceModel>> {
           trustLevel: TrustLevel.trusted,
         );
       }).toList();
-    } catch (_) {
+    } catch (e) {
+      debugPrint('[DeviceProvider] Failed to load trusted devices: $e');
       state = [];
     }
   }
@@ -88,7 +90,8 @@ class BlockedDevicesNotifier extends StateNotifier<List<String>> {
   void _load() {
     try {
       state = _box.values.cast<String>().toList();
-    } catch (_) {
+    } catch (e) {
+      debugPrint('[DeviceProvider] Failed to load blocked devices: $e');
       state = [];
     }
   }

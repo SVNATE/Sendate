@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive/hive.dart';
 
@@ -20,7 +21,9 @@ final transferServiceProvider = Provider<TransferService>((ref) {
     final settingsBox = Hive.box(AppConstants.settingsBox);
     service.localDeviceId = settingsBox.get('device_id', defaultValue: '') as String;
     service.localDeviceName = settingsBox.get('device_name', defaultValue: '') as String;
-  } catch (_) {}
+  } catch (e) {
+    debugPrint('[TransferServiceProvider] Failed to load device identity: $e');
+  }
 
   // Record completed/failed/cancelled transfers to history
   service.transferStream.listen((transfer) {

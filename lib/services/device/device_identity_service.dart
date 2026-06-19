@@ -3,10 +3,12 @@ import 'dart:io';
 import 'package:device_info_plus/device_info_plus.dart';
 import 'package:uuid/uuid.dart';
 
+import '../../core/utils/logger.dart';
 import '../../shared/models/device_model.dart';
 
 /// Generates and manages local device identity.
 class DeviceIdentityService {
+  final _log = const AppLogger('DeviceIdentity');
   final DeviceInfoPlugin _deviceInfo = DeviceInfoPlugin();
 
   Future<DeviceModel> getDeviceIdentity({
@@ -44,7 +46,9 @@ class DeviceIdentityService {
         final info = await _deviceInfo.linuxInfo;
         return info.prettyName;
       }
-    } catch (_) {}
+    } catch (e) {
+      _log.debug('Failed to get device name: $e');
+    }
     return 'My Device';
   }
 

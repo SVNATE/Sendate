@@ -97,7 +97,8 @@ class _OnboardingScreenState extends State<OnboardingScreen>
           if (mounted) _next();
         }
       }
-    } catch (_) {
+    } catch (e) {
+      debugPrint('[Onboarding] Permission check failed: $e');
       if (mounted) setState(() => _isCheckingPermission = false);
     }
   }
@@ -105,7 +106,9 @@ class _OnboardingScreenState extends State<OnboardingScreen>
   Future<void> _requestNotificationAccess() async {
     try {
       await _notificationChannel.invokeMethod('openPermissionSettings');
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('[Onboarding] Open permission settings failed: $e');
+    }
   }
 
   void _next() {

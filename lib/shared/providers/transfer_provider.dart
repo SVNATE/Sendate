@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive/hive.dart';
 
@@ -71,7 +72,8 @@ class TransferHistoryNotifier extends StateNotifier<List<TransferModel>> {
           duration: map['duration'] as int?,
         );
       }).toList();
-    } catch (_) {
+    } catch (e) {
+      debugPrint('[TransferProvider] Failed to load transfer history: $e');
       state = [];
     }
   }

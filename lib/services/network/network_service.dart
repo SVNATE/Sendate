@@ -2,8 +2,11 @@ import 'dart:io';
 
 import 'package:network_info_plus/network_info_plus.dart';
 
+import '../../core/utils/logger.dart';
+
 /// Provides local network information with hotspot detection.
 class NetworkService {
+  final _log = const AppLogger('Network');
   final NetworkInfo _networkInfo = NetworkInfo();
 
   /// Get the local IP address — handles both client and hotspot (AP) mode.
@@ -14,7 +17,9 @@ class NetworkService {
       if (wifiIP != null && wifiIP.isNotEmpty && wifiIP != '0.0.0.0') {
         return wifiIP;
       }
-    } catch (_) {}
+    } catch (e) {
+      _log.debug('WiFi IP lookup failed: $e');
+    }
 
     // Strategy 2: Enumerate all interfaces
     // This catches the hotspot interface (wlan0/ap0 on Android when device IS the AP)
@@ -45,7 +50,9 @@ class NetworkService {
 
       // Prefer hotspot IP if we're running as AP, otherwise use regular
       return hotspotIp ?? regularIp;
-    } catch (_) {}
+    } catch (e) {
+      _log.debug('Interface enumeration failed: $e');
+    }
 
     return null;
   }
@@ -58,7 +65,9 @@ class NetworkService {
       if (wifiIP != null && wifiIP.isNotEmpty && wifiIP != '0.0.0.0') {
         ips.add(wifiIP);
       }
-    } catch (_) {}
+    } catch (e) {
+      _log.debug('WiFi IP lookup for getAllLocalIps failed: $e');
+    }
 
     try {
       final interfaces = await NetworkInterface.list(type: InternetAddressType.IPv4);
@@ -69,7 +78,9 @@ class NetworkService {
           }
         }
       }
-    } catch (_) {}
+    } catch (e) {
+      _log.debug('Interface enumeration for getAllLocalIps failed: $e');
+    }
 
     return ips;
   }
@@ -91,7 +102,9 @@ class NetworkService {
           }
         }
       }
-    } catch (_) {}
+    } catch (e) {
+      _log.debug('Route command gateway lookup failed: $e');
+    }
 
     // Strategy 2: Use ip route (Linux)
     try {
@@ -100,7 +113,9 @@ class NetworkService {
         final match = RegExp(r'via (\d+\.\d+\.\d+\.\d+)').firstMatch(result.stdout as String);
         if (match != null) return match.group(1);
       }
-    } catch (_) {}
+    } catch (e) {
+      _log.debug('ip route gateway lookup failed: $e');
+    }
 
     // Strategy 3: Fallback — derive from local IP (assume .1)
     final ip = await getLocalIp();
@@ -113,7 +128,8 @@ class NetworkService {
   Future<String?> getWifiName() async {
     try {
       return await _networkInfo.getWifiName();
-    } catch (_) {
+    } catch (e) {
+      _log.debug('WiFi name lookup failed: $e');
       return null;
     }
   }
@@ -145,7 +161,9 @@ class NetworkService {
           }
         }
       }
-    } catch (_) {}
+    } catch (e) {
+      _log.debug('Hotspot host detection failed: $e');
+    }
     return false;
   }
 
@@ -184,7 +202,9 @@ class NetworkService {
           }
         }
       }
-    } catch (_) {}
+    } catch (e) {
+      _log.debug('Interface listing failed: $e');
+    }
     return result;
   }
 }

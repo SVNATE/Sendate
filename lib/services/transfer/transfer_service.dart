@@ -8,6 +8,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../core/constants/app_constants.dart';
+import '../../core/utils/logger.dart';
 import '../../shared/models/device_model.dart';
 import '../../shared/models/transfer_model.dart';
 import '../conversion/conversion_service.dart';
@@ -52,6 +53,7 @@ class _QueueItem {
 /// Encrypted, chunk-based file transfer engine.
 /// Protocol: HEADER → KEY_EXCHANGE → APPROVAL → ENCRYPTED_CHUNKS
 class TransferService {
+  final _log = const AppLogger('Transfer');
   ServerSocket? _server;
   final _transferController = StreamController<TransferModel>.broadcast();
   final Map<String, TransferModel> _activeTransfers = {};
@@ -394,7 +396,7 @@ class TransferService {
       );
       _activeTransfers.remove(transferId); _emit(transfer);
       onFileReceived?.call(transfer, savePath);
-    } catch (e) { socket.destroy(); }
+    } catch (e) { socket.destroy(); _log.debug('Incoming transfer handling failed: $e'); }
   }
 
   // --- Helpers ---
@@ -435,13 +437,17 @@ class TransferService {
           return _uniquePath('${dir.path}/$fileName');
         }
       }
-    } catch (_) {}
+    } catch (e) {
+      _log.debug('Save path resolution failed: $e');
+    }
     // Final fallback: use Downloads directory from path_provider
     try {
       final downloadsDir = await getDownloadsDirectory();
       if (downloadsDir != null) return _uniquePath('${downloadsDir.path}/$fileName');
-    } catch (_) {}
-    try { final appDir = await getApplicationDocumentsDirectory(); return _uniquePath('${appDir.path}/$fileName'); } catch (_) {}
+    } catch (e) {
+      _log.debug('Downloads directory fallback failed: $e');
+    }
+    try { final appDir = await getApplicationDocumentsDirectory(); return _uniquePath('${appDir.path}/$fileName'); } catch (e) { _log.debug('App documents directory fallback failed: $e'); }
     return _uniquePath('${Directory.systemTemp.path}/$fileName');
   }
 
@@ -455,9 +461,9 @@ class TransferService {
   }
 
   void _saveResumeData(String id, int bytes, String path, DeviceModel target) {
-    try { Hive.box(AppConstants.resumeBox).put(id, {'bytesTransferred': bytes, 'filePath': path, 'targetId': target.id, 'targetIp': target.ipAddress, 'targetPort': target.port, 'targetName': target.name, 'timestamp': DateTime.now().toIso8601String()}); } catch (_) {}
+    try { Hive.box(AppConstants.resumeBox).put(id, {'bytesTransferred': bytes, 'filePath': path, 'targetId': target.id, 'targetIp': target.ipAddress, 'targetPort': target.port, 'targetName': target.name, 'timestamp': DateTime.now().toIso8601String()}); } catch (e) { _log.debug('Save resume data failed: $e'); }
   }
-  void _clearResumeData(String id) { try { Hive.box(AppConstants.resumeBox).delete(id); } catch (_) {} }
+  void _clearResumeData(String id) { try { Hive.box(AppConstants.resumeBox).delete(id); } catch (e) { _log.debug('Clear resume data failed: $e'); } }
 
   Uint8List _intToBytes(int v) => Uint8List(4)..buffer.asByteData().setInt32(0, v, Endian.big);
   int _bytesToInt(List<int> b) => Uint8List.fromList(b).buffer.asByteData().getInt32(0, Endian.big);
