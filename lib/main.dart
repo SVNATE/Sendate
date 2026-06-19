@@ -67,11 +67,8 @@ void main() async {
     debugPrint('[Main] Notification init failed: $e');
   }
 
-  // Background service disabled — causes crash on Android 14+ without proper foreground service type
-  // The app works fine without it: discovery and clipboard run while app is open
-  // try {
-  //   await BackgroundServiceHelper.initialize();
-  // } catch (_) {}
+  // Background service initialization handled by AndroidForegroundService below.
+  // The foreground service uses dataSync type which is compatible with Android 14+.
 
   // Start Android foreground service
   if (AndroidForegroundService.isSupported) {

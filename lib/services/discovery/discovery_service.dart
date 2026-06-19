@@ -21,6 +21,7 @@ class DiscoveryService {
   final _devicesController = StreamController<List<DeviceModel>>.broadcast();
   final Map<String, _DiscoveredDevice> _discovered = {};
   bool _isRunning = false;
+  bool _isBinding = false;
   DeviceModel? _localDevice;
   String? _localIp;
   final NetworkService _networkService = NetworkService();
@@ -64,6 +65,16 @@ class DiscoveryService {
   }
 
   Future<void> _bindSockets() async {
+    if (_isBinding) return;
+    _isBinding = true;
+    
+    // Close existing sockets before rebinding
+    _broadcastSocket?.close();
+    _broadcastSocket = null;
+    try { _multicastSocket?.leaveMulticast(InternetAddress(_multicastGroup)); } catch (_) {}
+    _multicastSocket?.close();
+    _multicastSocket = null;
+
     // Bind broadcast socket
     for (var attempt = 0; attempt < 3; attempt++) {
       try {
@@ -106,6 +117,7 @@ class DiscoveryService {
     } catch (e) {
       _log.debug('Multicast socket bind failed: $e');
     }
+    _isBinding = false;
   }
 
   /// Stop discovery

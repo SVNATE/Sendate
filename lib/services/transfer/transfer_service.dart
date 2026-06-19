@@ -84,9 +84,25 @@ class TransferService {
 
   Future<void> startServer() async {
     if (_isListening) return;
-    _server = await ServerSocket.bind(InternetAddress.anyIPv4, AppConstants.transferPort);
-    _isListening = true;
-    _server!.listen(_handleIncoming);
+    
+    // Try primary port, then fallback ports if already in use
+    for (var portOffset = 0; portOffset < 3; portOffset++) {
+      try {
+        final port = AppConstants.transferPort + portOffset;
+        _server = await ServerSocket.bind(InternetAddress.anyIPv4, port);
+        _isListening = true;
+        _server!.listen(_handleIncoming);
+        if (portOffset > 0) {
+          _log.info('Transfer server started on fallback port $port');
+        }
+        return;
+      } on SocketException catch (e) {
+        _log.debug('Port ${AppConstants.transferPort + portOffset} in use: $e');
+        if (portOffset == 2) {
+          _log.error('Failed to bind transfer server after 3 attempts');
+        }
+      }
+    }
   }
 
   Future<void> stopServer() async {

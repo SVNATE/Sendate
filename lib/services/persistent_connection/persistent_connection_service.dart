@@ -291,6 +291,23 @@ class PersistentConnectionService {
         }
       }
     }
+
+    // Prune zombie connections that have been disconnected too long
+    final staleIds = <String>[];
+    for (final entry in _connections.entries) {
+      if (entry.value.state == ConnectionState.disconnected && 
+          entry.value.reconnectAttempts >= _maxReconnectAttempts) {
+        staleIds.add(entry.key);
+      }
+    }
+    for (final id in staleIds) {
+      _connections[id]?.socket?.destroy();
+      _connections.remove(id);
+    }
+    if (staleIds.isNotEmpty) {
+      _log.debug('Pruned ${staleIds.length} stale zombie connection(s)');
+      _emit();
+    }
   }
 
   void _scheduleReconnect(String deviceId) {
