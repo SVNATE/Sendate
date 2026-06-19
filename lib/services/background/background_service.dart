@@ -1,7 +1,7 @@
 import '../foreground/android_foreground_service.dart';
 
 /// Background service helper.
-/// Android: Uses a proper foreground service (KDE Connect style) with persistent notification.
+/// Android: Uses a proper foreground service with persistent notification.
 /// Desktop: System tray keeps the process alive when window is closed.
 class BackgroundServiceHelper {
   static Future<void> initialize() async {

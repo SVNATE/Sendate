@@ -3,7 +3,7 @@ import 'dart:async';
 import 'package:connectivity_plus/connectivity_plus.dart';
 
 /// Monitors network connectivity changes and triggers appropriate actions.
-/// Fixes the common KDE Connect / LocalSend issue of devices disappearing
+/// Fixes the common issue of devices disappearing
 /// after network changes (WiFi switch, hotspot toggle, etc).
 class ConnectivityMonitor {
   final Connectivity _connectivity = Connectivity();

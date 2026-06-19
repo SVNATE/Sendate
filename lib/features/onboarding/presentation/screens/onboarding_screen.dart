@@ -324,7 +324,7 @@ class _NotificationAccessPage extends StatelessWidget {
           Text(
             isGranted
                 ? 'Your phone notifications will now appear\non your connected devices.'
-                : 'Allow Sendate to read your notifications\nso they appear on your connected PC or Mac\n— just like KDE Connect.',
+                : 'Allow Sendate to read your notifications\nso they appear on your connected PC or Mac.',
             style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                   color: colorScheme.onSurfaceVariant,
                   height: 1.5,

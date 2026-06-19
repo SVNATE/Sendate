@@ -1,7 +1,7 @@
 import 'dart:io';
 
 /// Platform-specific firewall and connectivity helpers.
-/// Addresses the common KDE Connect issue of Windows devices not connecting
+/// Addresses the common issue of Windows devices not connecting
 /// because firewall blocks UDP broadcast on unknown ports.
 class FirewallHelper {
   /// Check if we're on Windows and offer firewall fix

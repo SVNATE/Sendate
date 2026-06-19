@@ -19,7 +19,7 @@ import 'shared/models/device_model.dart';
 /// This keeps discovery, clipboard sync, and persistent connections alive
 /// even when the user swipes the app from recents.
 ///
-/// Like KDE Connect's BackgroundService — runs independently of the UI activity.
+/// Runs independently of the UI activity.
 @pragma('vm:entry-point')
 void backgroundMain() async {
   WidgetsFlutterBinding.ensureInitialized();

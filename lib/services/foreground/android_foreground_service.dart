@@ -7,7 +7,6 @@ import 'package:flutter/services.dart';
 /// The service runs its own FlutterEngine (background_main.dart) for discovery/clipboard.
 /// This class is used by the MAIN UI engine to communicate with the service.
 ///
-/// Like KDE Connect:
 /// - Persistent notification with connected device info
 /// - "Send Clipboard" and "Send Files" action buttons
 /// - Keeps running even when app is swiped from recents

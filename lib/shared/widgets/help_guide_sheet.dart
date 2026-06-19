@@ -153,7 +153,7 @@ List<HelpItem> get settingsGuideItems => [
   const HelpItem(icon: LucideIcons.folderOutput, title: 'Save Location', description: 'Choose where received files are saved — Downloads, Documents, or a custom folder.'),
   const HelpItem(icon: LucideIcons.repeat, title: 'Auto Convert', description: 'Automatically converts incompatible files (HEIC→JPEG, MOV→MP4) before sending.'),
   const HelpItem(icon: LucideIcons.zap, title: 'Auto Accept', description: 'When enabled, files from trusted devices are accepted without prompting.'),
-  const HelpItem(icon: LucideIcons.clipboard, title: 'Clipboard Sync', description: 'Auto-sync clipboard with connected devices. Copy on one, paste on another — like KDE Connect.'),
+  const HelpItem(icon: LucideIcons.clipboard, title: 'Clipboard Sync', description: 'Auto-sync clipboard with connected devices. Copy on one, paste on another.'),
   const HelpItem(icon: LucideIcons.lock, title: 'App Lock', description: 'Require fingerprint/face/PIN to open Sendate.'),
   const HelpItem(icon: LucideIcons.timer, title: 'Transfer Expiry', description: 'Auto-delete received files after 1 hour, 1 day, 7 days, or keep forever.'),
   const HelpItem(icon: LucideIcons.shield, title: 'Encryption', description: 'All transfers use AES-256-GCM encryption. Session keys are ephemeral.'),

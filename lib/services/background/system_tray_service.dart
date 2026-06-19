@@ -5,7 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:tray_manager/tray_manager.dart';
 import 'package:window_manager/window_manager.dart';
 
-/// System tray service — Soduto-style menu bar app.
+/// System tray service — menu bar app.
 ///
 /// On macOS: uses native NSStatusItem via method channel for reliable click handling.
 /// On Windows/Linux: uses tray_manager as fallback.
@@ -232,7 +232,7 @@ class SystemTrayService with TrayListener, WindowListener {
     windowManager.hide();
     if (Platform.isMacOS) {
       // Hide Dock icon when window is closed — app stays in menu bar only
-      // This is the KDE Connect / Soduto behavior
+      // App stays in menu bar only
       _setDockIconVisible(false);
     }
   }

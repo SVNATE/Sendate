@@ -71,7 +71,7 @@ void main() async {
   //   await BackgroundServiceHelper.initialize();
   // } catch (_) {}
 
-  // Start Android foreground service (KDE Connect style)
+  // Start Android foreground service
   if (AndroidForegroundService.isSupported) {
     await AndroidForegroundService.instance.start();
   }
@@ -133,7 +133,7 @@ class _SendateAppState extends ConsumerState<SendateApp> {
     try {
       ref.read(discoveryControllerProvider).startDiscovery();
 
-      // Wire tray device-specific actions (Soduto style)
+      // Wire tray device-specific actions
       final tray = SystemTrayService.instance;
       tray.onSendClipboardToDevice = (deviceName) {
         final devices = ref.read(allNearbyDevicesProvider);
@@ -164,7 +164,7 @@ class _SendateAppState extends ConsumerState<SendateApp> {
         }
       };
 
-      // Wire Android foreground service notification action buttons (KDE Connect style)
+      // Wire Android foreground service notification action buttons
       if (AndroidForegroundService.isSupported) {
         final fgService = AndroidForegroundService.instance;
         fgService.onSendClipboardAction = () {
@@ -230,7 +230,7 @@ class _SendateAppState extends ConsumerState<SendateApp> {
           }
         }
 
-        // Update Android foreground notification with device names (KDE Connect style)
+        // Update Android foreground notification with device names
         if (AndroidForegroundService.isSupported) {
           AndroidForegroundService.instance.updateConnectedDevices(
             devices.map((d) => d.name).toList(),

@@ -3,7 +3,6 @@ import 'dart:io';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
 /// Notification service with persistent connection notification + action buttons.
-/// Like KDE Connect: "Connected to: Device" with [Send Clipboard] [Send Files]
 class NotificationService {
   static final _plugin = FlutterLocalNotificationsPlugin();
   static const _connectionChannelId = 'sendate_connection';
