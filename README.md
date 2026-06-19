@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/icons/tray_icon.png" alt="Sendate Logo" width="120" />
+  <img src="src/img/app_logo.png" alt="Sendate Logo" width="120" />
 </p>
 
 <h1 align="center">Sendate</h1>
