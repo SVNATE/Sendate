@@ -1,9 +1,12 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:gap/gap.dart';
 import 'package:go_router/go_router.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 
+import '../../../../core/utils/platform_detector.dart';
 import '../../../../shared/models/device_model.dart';
 import '../../../../shared/providers/device_provider.dart';
 import '../../../../shared/providers/discovery_provider.dart';
@@ -49,11 +52,20 @@ class _DevicesScreenState extends ConsumerState<DevicesScreen> {
                 icon: Icon(LucideIcons.bluetooth),
                 tooltip: 'Bluetooth scan',
               ),
-              IconButton(
-                onPressed: () => context.push('/connect/scan'),
-                icon: Icon(LucideIcons.scanLine),
-                tooltip: 'Scan QR',
-              ),
+              // QR Scan only available on mobile (camera required)
+              if (Platform.isAndroid || Platform.isIOS)
+                FutureBuilder<bool>(
+                  future: PlatformDetector.isTV(),
+                  builder: (context, snapshot) {
+                    final isTV = snapshot.data ?? false;
+                    if (isTV) return const SizedBox.shrink();
+                    return IconButton(
+                      onPressed: () => context.push('/connect/scan'),
+                      icon: Icon(LucideIcons.scanLine),
+                      tooltip: 'Scan QR',
+                    );
+                  },
+                ),
               IconButton(
                 onPressed: () => context.push('/connect/manual'),
                 icon: Icon(LucideIcons.globe),
