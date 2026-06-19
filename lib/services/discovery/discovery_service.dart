@@ -140,6 +140,20 @@ class DiscoveryService {
     _devicesController.add([]);
   }
 
+  /// Restart discovery sockets when network interface changes (WiFi switch, hotspot toggle).
+  /// Called by ConnectivityMonitor when network state changes.
+  Future<void> restartSockets() async {
+    if (!_isRunning) return;
+    _log.info('Network change detected — rebinding discovery sockets');
+    await _bindSockets();
+    // Burst announce to quickly re-discover devices on new network
+    for (var i = 0; i < 5; i++) {
+      _announce();
+      await Future.delayed(const Duration(milliseconds: 300));
+    }
+    _probeGateway();
+  }
+
   /// Force re-announce (call on app resume or network change)
   Future<void> reannounce() async {
     // Refresh IP from ALL interfaces
