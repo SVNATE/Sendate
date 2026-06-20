@@ -50,6 +50,18 @@ class TransferProgressCard extends StatelessWidget {
     return '${(bytes / (1024 * 1024 * 1024)).toStringAsFixed(2)} GB';
   }
 
+  String? _etaLabel() {
+    final speed = transfer.speed;
+    if (speed == null || speed <= 0) return null;
+    final remaining = transfer.fileSize - transfer.bytesTransferred;
+    if (remaining <= 0) return null;
+    final seconds = (remaining / speed).ceil();
+    if (seconds < 60) return '${seconds}s left';
+    final minutes = (seconds / 60).ceil();
+    if (minutes < 60) return '${minutes}m left';
+    return '${(minutes / 60).ceil()}h left';
+  }
+
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
@@ -132,6 +144,15 @@ class TransferProgressCard extends StatelessWidget {
                           color: colorScheme.onSurfaceVariant,
                         ),
                   ),
+                  if (_etaLabel() != null) ...[
+                    const SizedBox(width: 8),
+                    Text(
+                      _etaLabel()!,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: colorScheme.onSurfaceVariant.withValues(alpha: 0.7),
+                          ),
+                    ),
+                  ],
                 ],
               ],
             ),

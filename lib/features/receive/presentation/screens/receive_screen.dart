@@ -350,11 +350,53 @@ class _NetworkStatusChip extends ConsumerWidget {
   }
 }
 
-class _BrowserReceiverToggle extends ConsumerWidget {
+class _BrowserReceiverToggle extends ConsumerStatefulWidget {
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<_BrowserReceiverToggle> createState() =>
+      _BrowserReceiverToggleState();
+}
+
+class _BrowserReceiverToggleState
+    extends ConsumerState<_BrowserReceiverToggle> {
+  final _passwordController = TextEditingController();
+  bool _showPassword = false;
+  bool _usePassword = false;
+
+  @override
+  void dispose() {
+    _passwordController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _start() async {
+    final service = ref.read(browserReceiverServiceProvider);
+    final password =
+        (_usePassword && _passwordController.text.isNotEmpty)
+            ? _passwordController.text.trim()
+            : null;
+    await service.start(password: password);
+    final ip =
+        await ref.read(networkServiceProvider).getLocalIp();
+    final urlBase = 'http://$ip:${service.port}';
+    final receiverUrl =
+        password != null ? '$urlBase?pwd=$password' : urlBase;
+    ref.read(browserReceiverActiveProvider.notifier).state = true;
+    ref.read(browserReceiverUrlProvider.notifier).state = receiverUrl;
+    ref.read(browserReceiverPasswordProvider.notifier).state = password;
+  }
+
+  Future<void> _stop() async {
+    await ref.read(browserReceiverServiceProvider).stop();
+    ref.read(browserReceiverActiveProvider.notifier).state = false;
+    ref.read(browserReceiverUrlProvider.notifier).state = null;
+    ref.read(browserReceiverPasswordProvider.notifier).state = null;
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final isActive = ref.watch(browserReceiverActiveProvider);
     final url = ref.watch(browserReceiverUrlProvider);
+    final password = ref.watch(browserReceiverPasswordProvider);
     final colorScheme = Theme.of(context).colorScheme;
 
     return Card(
@@ -367,63 +409,145 @@ class _BrowserReceiverToggle extends ConsumerWidget {
               children: [
                 Icon(LucideIcons.globe, size: 18, color: colorScheme.primary),
                 const Gap(8),
-                Expanded(
+                const Expanded(
                   child: Text(
                     'Browser Receiver',
-                    style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+                    style: TextStyle(
+                        fontWeight: FontWeight.w600, fontSize: 14),
                   ),
                 ),
                 Switch(
                   value: isActive,
                   onChanged: (value) async {
-                    final service = ref.read(browserReceiverServiceProvider);
                     if (value) {
-                      await service.start();
-                      final ip = await ref.read(networkServiceProvider).getLocalIp();
-                      final receiverUrl = 'http://$ip:${service.port}';
-                      ref.read(browserReceiverActiveProvider.notifier).state = true;
-                      ref.read(browserReceiverUrlProvider.notifier).state = receiverUrl;
+                      await _start();
                     } else {
-                      await service.stop();
-                      ref.read(browserReceiverActiveProvider.notifier).state = false;
-                      ref.read(browserReceiverUrlProvider.notifier).state = null;
+                      await _stop();
                     }
                   },
                 ),
               ],
             ),
+            // Password toggle (only when not active)
+            if (!isActive) ...[
+              const Gap(8),
+              Row(
+                children: [
+                  Checkbox(
+                    value: _usePassword,
+                    visualDensity: VisualDensity.compact,
+                    onChanged: (v) =>
+                        setState(() => _usePassword = v ?? false),
+                  ),
+                  const Text('Require password',
+                      style: TextStyle(fontSize: 13)),
+                ],
+              ),
+              if (_usePassword) ...[
+                const Gap(4),
+                TextField(
+                  controller: _passwordController,
+                  obscureText: !_showPassword,
+                  style: const TextStyle(fontSize: 13),
+                  decoration: InputDecoration(
+                    isDense: true,
+                    contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 12, vertical: 10),
+                    hintText: 'Enter password',
+                    border: const OutlineInputBorder(),
+                    suffixIcon: IconButton(
+                      icon: Icon(_showPassword
+                          ? LucideIcons.eyeOff
+                          : LucideIcons.eye),
+                      iconSize: 16,
+                      onPressed: () =>
+                          setState(() => _showPassword = !_showPassword),
+                    ),
+                  ),
+                ),
+              ],
+            ],
             if (isActive && url != null) ...[
               const Gap(8),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 12, vertical: 8),
                 decoration: BoxDecoration(
-                  color: colorScheme.primaryContainer.withValues(alpha: 0.3),
+                  color:
+                      colorScheme.primaryContainer.withValues(alpha: 0.3),
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: Row(
                   children: [
                     Expanded(
                       child: Text(
-                        url,
-                        style: TextStyle(fontSize: 12, fontFamily: 'monospace', color: colorScheme.primary),
+                        // Show URL without embedded password
+                        url.contains('?pwd=')
+                            ? url.split('?pwd=').first
+                            : url,
+                        style: TextStyle(
+                            fontSize: 12,
+                            fontFamily: 'monospace',
+                            color: colorScheme.primary),
                       ),
                     ),
                     GestureDetector(
                       onTap: () {
                         Clipboard.setData(ClipboardData(text: url));
                         ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('URL copied'), duration: Duration(seconds: 1)),
+                          const SnackBar(
+                              content: Text('URL copied'),
+                              duration: Duration(seconds: 1)),
                         );
                       },
-                      child: Icon(LucideIcons.copy, size: 16, color: colorScheme.primary),
+                      child: Icon(LucideIcons.copy,
+                          size: 16, color: colorScheme.primary),
                     ),
                   ],
                 ),
               ),
+              if (password != null) ...[
+                const Gap(6),
+                Row(
+                  children: [
+                    Icon(LucideIcons.lock,
+                        size: 12,
+                        color: colorScheme.onSurfaceVariant),
+                    const Gap(4),
+                    Text(
+                      'Password protected',
+                      style: TextStyle(
+                          fontSize: 11,
+                          color: colorScheme.onSurfaceVariant),
+                    ),
+                    const Gap(8),
+                    GestureDetector(
+                      onTap: () {
+                        Clipboard.setData(
+                            ClipboardData(text: password));
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                              content: Text('Password copied'),
+                              duration: Duration(seconds: 1)),
+                        );
+                      },
+                      child: Text(
+                        'Copy password',
+                        style: TextStyle(
+                            fontSize: 11,
+                            color: colorScheme.primary,
+                            decoration: TextDecoration.underline),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
               const Gap(4),
               Text(
-                'Open this URL in any browser to send files',
-                style: TextStyle(fontSize: 11, color: colorScheme.onSurfaceVariant),
+                'Open this URL in any browser on the same network',
+                style: TextStyle(
+                    fontSize: 11,
+                    color: colorScheme.onSurfaceVariant),
               ),
             ],
           ],

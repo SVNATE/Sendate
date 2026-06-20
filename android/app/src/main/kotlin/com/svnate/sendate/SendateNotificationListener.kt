@@ -61,6 +61,23 @@ class SendateNotificationListener : NotificationListenerService() {
             intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK
             context.startActivity(intent)
         }
+
+        /**
+         * Execute a notification action (reply, dismiss, custom action) by index.
+         * Called when a remote device forwards an action back to us.
+         */
+        fun performNotificationAction(notificationKey: String, actionIndex: Int) {
+            val listener = instance ?: return
+            try {
+                val activeNotif = listener.activeNotifications?.find { it.key == notificationKey }
+                    ?: return
+                val action = activeNotif.notification.actions?.getOrNull(actionIndex) ?: return
+                action.actionIntent?.send()
+                Log.d(TAG, "Performed action[$actionIndex] on $notificationKey")
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to perform action: ${e.message}")
+            }
+        }
     }
 
     // Packages to ignore (system notifications that shouldn't be synced)

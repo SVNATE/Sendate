@@ -34,6 +34,10 @@ class _DevicesScreenState extends ConsumerState<DevicesScreen> {
   Widget build(BuildContext context) {
     final trustedDevices = ref.watch(trustedDevicesProvider);
     final nearbyDevices = ref.watch(allNearbyDevicesProvider);
+    final favoriteIds = ref.watch(favoritedDevicesProvider);
+    final pinnedDevices = [...trustedDevices, ...nearbyDevices]
+        .where((d) => favoriteIds.contains(d.id))
+        .toList();
 
     return SafeArea(
       child: CustomScrollView(
@@ -87,6 +91,29 @@ class _DevicesScreenState extends ConsumerState<DevicesScreen> {
             sliver: SliverList.list(
               children: [
                 const Gap(8),
+                // Pinned Section
+                if (pinnedDevices.isNotEmpty) ...
+                  [
+                    _SectionHeader(
+                      title: 'Pinned',
+                      count: pinnedDevices.length,
+                      icon: LucideIcons.pin,
+                    ),
+                    const Gap(12),
+                    ...pinnedDevices.map(
+                      (d) => _DeviceTile(
+                        device: d,
+                        onTrust: trustedDevices.any((t) => t.id == d.id)
+                            ? null
+                            : () => _trustDevice(d),
+                        onBlock: () => _blockDevice(d),
+                        onRemove: trustedDevices.any((t) => t.id == d.id)
+                            ? () => _removeTrusted(d)
+                            : null,
+                      ),
+                    ),
+                    const Gap(24),
+                  ],
                 // Trusted Section
                 if (trustedDevices.isNotEmpty) ...[
                   _SectionHeader(
@@ -224,7 +251,7 @@ class _SectionHeader extends StatelessWidget {
   }
 }
 
-class _DeviceTile extends StatelessWidget {
+class _DeviceTile extends ConsumerWidget {
   final DeviceModel device;
   final VoidCallback? onTrust;
   final VoidCallback? onBlock;
@@ -244,8 +271,9 @@ class _DeviceTile extends StatelessWidget {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final colorScheme = Theme.of(context).colorScheme;
+    final isFav = ref.watch(favoritedDevicesProvider).contains(device.id);
 
     return Card(
       margin: const EdgeInsets.only(bottom: 8),
@@ -271,6 +299,10 @@ class _DeviceTile extends StatelessWidget {
             switch (value) {
               case 'message':
                 context.push('/chat', extra: device);
+              case 'pin':
+                ref
+                    .read(favoritedDevicesProvider.notifier)
+                    .toggleFavorite(device.id);
               case 'trust':
                 onTrust?.call();
               case 'block':
@@ -281,6 +313,10 @@ class _DeviceTile extends StatelessWidget {
           },
           itemBuilder: (context) => [
             const PopupMenuItem(value: 'message', child: Text('Message')),
+            PopupMenuItem(
+              value: 'pin',
+              child: Text(isFav ? 'Unpin' : 'Pin'),
+            ),
             if (onTrust != null)
               const PopupMenuItem(value: 'trust', child: Text('Trust')),
             if (onBlock != null)

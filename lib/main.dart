@@ -36,6 +36,7 @@ void main() async {
   await Hive.openBox(AppConstants.historyBox);
   await Hive.openBox(AppConstants.resumeBox);
   await Hive.openBox(AppConstants.blockedBox);
+  await Hive.openBox(AppConstants.favoritesBox);
 
   // Initialize device identity
   final identityService = DeviceIdentityService();
@@ -116,6 +117,10 @@ class _SendateAppState extends ConsumerState<SendateApp> {
       _initTransferServer();
       // Start discovery ALWAYS, regardless of other service errors
       _startDiscovery();
+
+      // Apply persisted hidden mode to discovery service
+      final hiddenMode = ref.read(hiddenModeProvider);
+      ref.read(discoveryServiceProvider).hiddenMode = hiddenMode;
 
       final settingsBox = Hive.box(AppConstants.settingsBox);
       final onboardingDone = settingsBox.get('onboarding_complete', defaultValue: false) as bool;

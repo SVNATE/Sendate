@@ -4,6 +4,7 @@ import '../../core/utils/global_navigator.dart';
 import '../../features/connect/presentation/screens/manual_connect_screen.dart';
 import '../../features/connect/presentation/screens/qr_scan_screen.dart';
 import '../../features/devices/presentation/screens/devices_screen.dart';
+import '../../features/folder_sync/presentation/screens/folder_sync_screen.dart';
 import '../../features/history/presentation/screens/history_screen.dart';
 import '../../features/messaging/presentation/screens/chat_screen.dart';
 import '../../features/receive/presentation/screens/receive_screen.dart';
@@ -52,6 +53,10 @@ final appRouter = GoRouter(
       ],
     ),
     // Non-shell routes (full screen)
+    GoRoute(
+      path: '/folder-sync',
+      builder: (context, state) => const FolderSyncScreen(),
+    ),
     GoRoute(
       path: '/connect/manual',
       builder: (context, state) => const ManualConnectScreen(),

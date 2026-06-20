@@ -3,6 +3,8 @@ package com.svnate.sendate
 import android.Manifest
 import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothDevice
+import android.bluetooth.BluetoothServerSocket
+import android.bluetooth.BluetoothSocket
 import android.content.BroadcastReceiver
 import android.content.ClipboardManager
 import android.content.Context
@@ -20,6 +22,8 @@ import androidx.core.content.ContextCompat
 import io.flutter.embedding.android.FlutterFragmentActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
+import java.io.IOException
+import java.util.UUID
 
 class MainActivity : FlutterFragmentActivity() {
     companion object {
@@ -28,14 +32,22 @@ class MainActivity : FlutterFragmentActivity() {
     }
 
     private val BT_CHANNEL = "com.svnate.sendate/bluetooth"
+    private val BT_TRANSFER_CHANNEL = "com.svnate.sendate/bt_transfer"
     private val WFD_CHANNEL = "com.svnate.sendate/wifi_direct"
     private val CLIPBOARD_CHANNEL = "com.svnate.sendate/native_clipboard"
     private val SERVICE_CHANNEL = "com.svnate.sendate/foreground_service"
     private val NOTIFICATION_LISTENER_CHANNEL = "com.svnate.sendate/notification_listener"
 
+    private val BT_SPP_UUID: UUID =
+        UUID.fromString("00001101-0000-1000-8000-00805F9B34FB") // Standard SPP UUID
+
     private var bluetoothAdapter: BluetoothAdapter? = null
     private var clipboardChannel: MethodChannel? = null
     private var btChannel: MethodChannel? = null
+    private var btTransferChannel: MethodChannel? = null
+    private var btClientSocket: BluetoothSocket? = null
+    private var btServerSocket: BluetoothServerSocket? = null
+    private var btServerThread: Thread? = null
     private var wfdChannel: MethodChannel? = null
     private var serviceChannel: MethodChannel? = null
     private var notificationListenerChannel: MethodChannel? = null
@@ -187,6 +199,89 @@ class MainActivity : FlutterFragmentActivity() {
             }
         }
 
+        // --- Bluetooth RFCOMM File Transfer ---
+        btTransferChannel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, BT_TRANSFER_CHANNEL)
+        btTransferChannel?.setMethodCallHandler { call, result ->
+            when (call.method) {
+                // Connect as RFCOMM client to a paired device
+                "connect" -> {
+                    val address = call.argument<String>("address") ?: run {
+                        result.error("ARG", "address required", null); return@setMethodCallHandler
+                    }
+                    Thread {
+                        try {
+                            val device = bluetoothAdapter?.getRemoteDevice(address)
+                                ?: throw IOException("Device not found")
+                            bluetoothAdapter?.cancelDiscovery()
+                            val socket = device.createRfcommSocketToServiceRecord(BT_SPP_UUID)
+                            socket.connect()
+                            btClientSocket?.close()
+                            btClientSocket = socket
+                            runOnUiThread { result.success(true) }
+                        } catch (e: Exception) {
+                            runOnUiThread {
+                                result.error("CONNECT_FAIL", e.message, null)
+                            }
+                        }
+                    }.start()
+                }
+                // Send raw bytes over the established RFCOMM socket
+                "send" -> {
+                    val socket = btClientSocket ?: run {
+                        result.error("NO_SOCKET", "Not connected", null); return@setMethodCallHandler
+                    }
+                    val data = call.argument<ByteArray>("data") ?: run {
+                        result.error("ARG", "data required", null); return@setMethodCallHandler
+                    }
+                    Thread {
+                        try {
+                            socket.outputStream.write(data)
+                            socket.outputStream.flush()
+                            runOnUiThread { result.success(true) }
+                        } catch (e: IOException) {
+                            runOnUiThread { result.error("SEND_FAIL", e.message, null) }
+                        }
+                    }.start()
+                }
+                // Disconnect client socket
+                "disconnect" -> {
+                    try { btClientSocket?.close() } catch (_: IOException) {}
+                    btClientSocket = null
+                    result.success(true)
+                }
+                // Start RFCOMM server socket to accept incoming connections
+                "startServer" -> {
+                    btServerThread?.interrupt()
+                    btServerThread = Thread {
+                        try {
+                            btServerSocket?.close()
+                            btServerSocket = bluetoothAdapter
+                                ?.listenUsingRfcommWithServiceRecord("Sendate", BT_SPP_UUID)
+                            Log.d(TAG, "BT server listening…")
+                            while (!Thread.currentThread().isInterrupted) {
+                                val clientSocket = btServerSocket?.accept() ?: break
+                                // Read all data from the incoming client
+                                Thread {
+                                    _handleIncomingBtClient(clientSocket)
+                                }.start()
+                            }
+                        } catch (_: IOException) { /* server closed */ }
+                    }
+                    btServerThread?.start()
+                    result.success(true)
+                }
+                // Stop the RFCOMM server
+                "stopServer" -> {
+                    btServerThread?.interrupt()
+                    btServerThread = null
+                    try { btServerSocket?.close() } catch (_: IOException) {}
+                    btServerSocket = null
+                    result.success(true)
+                }
+                else -> result.notImplemented()
+            }
+        }
+
         // --- WiFi Direct ---
         wifiP2pManager = getSystemService(Context.WIFI_P2P_SERVICE) as? WifiP2pManager
         wifiP2pChannel = wifiP2pManager?.initialize(this, Looper.getMainLooper(), null)
@@ -225,6 +320,24 @@ class MainActivity : FlutterFragmentActivity() {
                     } catch (e: SecurityException) { result.error("PERMISSION", "Permission denied", null) }
                 }
                 "disconnect" -> { wifiP2pManager?.removeGroup(wifiP2pChannel, null); result.success(true) }
+                // Return the group owner's IP address (needed for the non-owner to connect via TCP)
+                "getGroupInfo" -> {
+                    try {
+                        wifiP2pManager?.requestGroupInfo(wifiP2pChannel) { group ->
+                            if (group != null) {
+                                result.success(mapOf(
+                                    "groupOwnerAddress" to group.owner.deviceAddress,
+                                    "networkName" to group.networkName,
+                                    "passphrase" to group.passphrase,
+                                ))
+                            } else {
+                                result.error("NO_GROUP", "No active Wi-Fi Direct group", null)
+                            }
+                        }
+                    } catch (e: SecurityException) {
+                        result.error("PERMISSION", "Permission denied", null)
+                    }
+                }
                 else -> result.notImplemented()
             }
         }
@@ -238,6 +351,12 @@ class MainActivity : FlutterFragmentActivity() {
                 }
                 "openPermissionSettings" -> {
                     SendateNotificationListener.openPermissionSettings(this)
+                    result.success(true)
+                }
+                "performAction" -> {
+                    val notifId = call.argument<String>("notificationId") ?: ""
+                    val actionIndex = call.argument<Int>("actionIndex") ?: 0
+                    SendateNotificationListener.performNotificationAction(notifId, actionIndex)
                     result.success(true)
                 }
                 else -> result.notImplemented()
@@ -325,6 +444,35 @@ class MainActivity : FlutterFragmentActivity() {
     override fun onDestroy() {
         try { unregisterReceiver(btReceiver) } catch (_: Exception) {}
         try { unregisterReceiver(wfdReceiver) } catch (_: Exception) {}
+        try { btClientSocket?.close() } catch (_: IOException) {}
+        try { btServerSocket?.close() } catch (_: IOException) {}
+        btServerThread?.interrupt()
         super.onDestroy()
+    }
+
+    /// Handle bytes received from an incoming Bluetooth client connection.
+    private fun _handleIncomingBtClient(socket: BluetoothSocket) {
+        try {
+            val inputStream = socket.inputStream
+            val buffer = ByteArray(16384)
+            val accumulated = mutableListOf<Byte>()
+
+            while (true) {
+                val bytesRead = inputStream.read(buffer)
+                if (bytesRead < 0) break
+                accumulated.addAll(buffer.take(bytesRead).toList())
+            }
+
+            val data = accumulated.toByteArray()
+            Log.d(TAG, "BT received ${data.size} bytes")
+            runOnUiThread {
+                btTransferChannel?.invokeMethod("onDataReceived",
+                    mapOf("data" to data, "address" to socket.remoteDevice.address))
+            }
+        } catch (e: IOException) {
+            Log.e(TAG, "BT client read error: ${e.message}")
+        } finally {
+            try { socket.close() } catch (_: IOException) {}
+        }
     }
 }

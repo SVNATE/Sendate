@@ -15,6 +15,12 @@ import '../widgets/clipboard_send_dialog.dart';
 final selectedFilesProvider =
     StateProvider<List<PlatformFile>>((ref) => []);
 
+/// Broadcast mode — allow selecting multiple target devices.
+final broadcastModeProvider = StateProvider<bool>((ref) => false);
+
+/// Device IDs selected for broadcast send.
+final selectedDeviceIdsProvider = StateProvider<Set<String>>((ref) => {});
+
 class SendScreen extends ConsumerStatefulWidget {
   const SendScreen({super.key});
 
@@ -36,15 +42,32 @@ class _SendScreenState extends ConsumerState<SendScreen> {
   Widget build(BuildContext context) {
     final nearbyDevices = ref.watch(allNearbyDevicesProvider);
     final selectedFiles = ref.watch(selectedFilesProvider);
+    final broadcastMode = ref.watch(broadcastModeProvider);
+    final selectedDeviceIds = ref.watch(selectedDeviceIdsProvider);
     final colorScheme = Theme.of(context).colorScheme;
 
     return SafeArea(
-      child: CustomScrollView(
+      child: Stack(
+        children: [
+          CustomScrollView(
         slivers: [
           SliverAppBar(
             floating: true,
             title: const Text('Send'),
             actions: [
+              // Broadcast mode toggle
+              IconButton(
+                onPressed: () {
+                  ref.read(broadcastModeProvider.notifier).state =
+                      !broadcastMode;
+                  ref.read(selectedDeviceIdsProvider.notifier).state = {};
+                },
+                icon: Icon(
+                  LucideIcons.radio,
+                  color: broadcastMode ? colorScheme.primary : null,
+                ),
+                tooltip: broadcastMode ? 'Exit broadcast mode' : 'Broadcast to multiple devices',
+              ),
               IconButton(
                 onPressed: () => showHelpGuide(context, title: 'Send Help', items: sendGuideItems),
                 icon: Icon(LucideIcons.helpCircle),
@@ -121,16 +144,55 @@ class _SendScreenState extends ConsumerState<SendScreen> {
                   )
                 else
                   ...nearbyDevices.map(
-                    (device) => _NearbyDeviceTile(
+                    (device) => broadcastMode
+                        ? _BroadcastDeviceTile(
+                            device: device,
+                            isSelected:
+                                selectedDeviceIds.contains(device.id),
+                            onToggle: () {
+                              final ids = Set<String>.from(
+                                  ref.read(selectedDeviceIdsProvider));
+                              if (ids.contains(device.id)) {
+                                ids.remove(device.id);
+                              } else {
+                                ids.add(device.id);
+                              }
+                              ref
+                                  .read(selectedDeviceIdsProvider.notifier)
+                                  .state = ids;
+                            },
+                          )
+                        : _NearbyDeviceTile(
                       device: device,
                       hasFiles: selectedFiles.isNotEmpty,
                       onTap: () => _sendToDevice(device),
                     ),
                   ),
-                const Gap(24),
+                Gap(broadcastMode ? 80 : 24),
               ],
             ),
           ),
+        ],
+      ),
+          // Broadcast send button (floating at bottom)
+          if (broadcastMode && selectedDeviceIds.isNotEmpty && selectedFiles.isNotEmpty)
+            Positioned(
+              left: 16,
+              right: 16,
+              bottom: 16,
+              child: SafeArea(
+                child: FilledButton.icon(
+                  onPressed: () => _broadcastSend(nearbyDevices, selectedDeviceIds, selectedFiles),
+                  icon: const Icon(LucideIcons.radio),
+                  label: Text(
+                    'Send to ${selectedDeviceIds.length} device${selectedDeviceIds.length == 1 ? '' : 's'}',
+                  ),
+                  style: FilledButton.styleFrom(
+                    minimumSize: const Size(double.infinity, 52),
+                  ),
+                ),
+              ),
+            ),
         ],
       ),
     );
@@ -225,6 +287,84 @@ class _SendScreenState extends ConsumerState<SendScreen> {
 
     // Send all files
     controller.sendFiles(filePaths: filePaths, target: device);
+  }
+
+  /// Broadcast: send the same files to all selected devices in parallel.
+  void _broadcastSend(
+    List<DeviceModel> allDevices,
+    Set<String> selectedIds,
+    List<PlatformFile> files,
+  ) {
+    final targets =
+        allDevices.where((d) => selectedIds.contains(d.id)).toList();
+    if (targets.isEmpty) return;
+
+    final filePaths = files
+        .where((f) => f.path != null)
+        .map((f) => f.path!)
+        .toList();
+    if (filePaths.isEmpty) return;
+
+    final controller = ref.read(transferControllerProvider);
+
+    for (final target in targets) {
+      controller.sendFiles(filePaths: filePaths, target: target);
+    }
+
+    // Reset state
+    ref.read(selectedFilesProvider.notifier).state = [];
+    ref.read(selectedDeviceIdsProvider.notifier).state = {};
+    ref.read(broadcastModeProvider.notifier).state = false;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+            'Broadcasting ${filePaths.length} file(s) to ${targets.length} device(s)'),
+        duration: const Duration(seconds: 2),
+      ),
+    );
+  }
+}
+
+class _BroadcastDeviceTile extends StatelessWidget {
+  final DeviceModel device;
+  final bool isSelected;
+  final VoidCallback onToggle;
+
+  const _BroadcastDeviceTile({
+    required this.device,
+    required this.isSelected,
+    required this.onToggle,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return Card(
+      margin: const EdgeInsets.only(bottom: 8),
+      color: isSelected
+          ? colorScheme.primaryContainer.withValues(alpha: 0.3)
+          : null,
+      child: ListTile(
+        contentPadding:
+            const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        leading: DeviceAvatar(device: device, showTrustBadge: true),
+        title: Text(device.name,
+            style: const TextStyle(fontWeight: FontWeight.w600)),
+        subtitle: Text(
+          '${device.deviceType.name} • ${device.ipAddress ?? ""}',
+          style: TextStyle(fontSize: 12, color: colorScheme.onSurfaceVariant),
+        ),
+        trailing: Checkbox(
+          value: isSelected,
+          onChanged: (_) => onToggle(),
+          activeColor: colorScheme.primary,
+        ),
+        shape:
+            RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        onTap: onToggle,
+      ),
+    );
   }
 }
 

@@ -44,10 +44,19 @@ class _TransferSession {
   }
 }
 
+enum TransferPriority { high, normal, low }
+
 class _QueueItem {
   final String filePath;
   final DeviceModel target;
-  _QueueItem({required this.filePath, required this.target});
+  final TransferPriority priority;
+  final DateTime? scheduledAt;
+  _QueueItem({
+    required this.filePath,
+    required this.target,
+    this.priority = TransferPriority.normal,
+    this.scheduledAt,
+  });
 }
 
 /// Encrypted, chunk-based file transfer engine.
@@ -67,6 +76,9 @@ class TransferService {
   bool autoConvertEnabled = true;
   bool encryptionEnabled = true;
   String? targetPlatform;
+
+  /// Optional bandwidth cap in bytes/sec (0 = unlimited).
+  int bandwidthLimitBytesPerSec = 0;
 
   /// Local device identity (set during initialization)
   String localDeviceId = '';
@@ -113,18 +125,55 @@ class TransferService {
 
   // --- Queue ---
 
-  void enqueueFiles({required List<String> filePaths, required DeviceModel target}) {
+  void enqueueFiles({
+    required List<String> filePaths,
+    required DeviceModel target,
+    TransferPriority priority = TransferPriority.normal,
+  }) {
     for (final path in filePaths) {
-      _queue.add(_QueueItem(filePath: path, target: target));
+      _queue.add(_QueueItem(filePath: path, target: target, priority: priority));
     }
+    // Sort by priority: high first, low last.
+    _queue.sort((a, b) => a.priority.index.compareTo(b.priority.index));
     _processQueue();
+  }
+
+  /// Schedule a transfer to be sent at [scheduledAt].
+  void scheduleTransfer({
+    required List<String> filePaths,
+    required DeviceModel target,
+    required DateTime scheduledAt,
+    TransferPriority priority = TransferPriority.normal,
+  }) {
+    final delay = scheduledAt.difference(DateTime.now());
+    if (delay.isNegative) {
+      enqueueFiles(filePaths: filePaths, target: target, priority: priority);
+      return;
+    }
+    Future.delayed(delay, () {
+      enqueueFiles(filePaths: filePaths, target: target, priority: priority);
+    });
   }
 
   Future<void> _processQueue() async {
     if (_isProcessingQueue) return;
     _isProcessingQueue = true;
     while (_queue.isNotEmpty) {
-      final item = _queue.removeAt(0);
+      // Skip items scheduled in the future
+      final item = _queue.first;
+      if (item.scheduledAt != null &&
+          item.scheduledAt!.isAfter(DateTime.now())) {
+        _queue.removeAt(0);
+        // Re-schedule via Future.delayed
+        scheduleTransfer(
+          filePaths: [item.filePath],
+          target: item.target,
+          scheduledAt: item.scheduledAt!,
+          priority: item.priority,
+        );
+        continue;
+      }
+      _queue.removeAt(0);
       await sendFile(filePath: item.filePath, target: item.target);
     }
     _isProcessingQueue = false;
@@ -247,6 +296,17 @@ class TransferService {
         socket.add(dataToSend);
         await socket.flush();
         bytesSent += chunk.length;
+
+        // Bandwidth throttle: if a limit is set, sleep to pace the transfer.
+        if (bandwidthLimitBytesPerSec > 0) {
+          final elapsed = stopwatch.elapsedMilliseconds;
+          final expectedMs =
+              (bytesSent * 1000) ~/ bandwidthLimitBytesPerSec;
+          if (expectedMs > elapsed) {
+            await Future.delayed(
+                Duration(milliseconds: expectedMs - elapsed));
+          }
+        }
 
         final elapsed = stopwatch.elapsedMilliseconds;
         final speed = elapsed > 0 ? (bytesSent * 1000) ~/ elapsed : 0;

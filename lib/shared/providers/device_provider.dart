@@ -134,3 +134,39 @@ class NearbyDevicesNotifier extends StateNotifier<List<DeviceModel>> {
     state = [];
   }
 }
+
+/// Favorited (pinned) device IDs — persisted in Hive favoritesBox.
+final favoritedDevicesProvider =
+    StateNotifierProvider<FavoritedDevicesNotifier, List<String>>(
+  (ref) => FavoritedDevicesNotifier(),
+);
+
+class FavoritedDevicesNotifier extends StateNotifier<List<String>> {
+  FavoritedDevicesNotifier() : super([]) {
+    _load();
+  }
+
+  Box get _box => Hive.box(AppConstants.favoritesBox);
+
+  void _load() {
+    try {
+      state = _box.values.cast<String>().toList();
+    } catch (e) {
+      debugPrint('[DeviceProvider] Failed to load favorites: $e');
+      state = [];
+    }
+  }
+
+  bool isFavorite(String deviceId) => state.contains(deviceId);
+
+  void toggleFavorite(String deviceId) {
+    if (isFavorite(deviceId)) {
+      state = state.where((id) => id != deviceId).toList();
+      final idx = _box.values.toList().indexOf(deviceId);
+      if (idx >= 0) _box.deleteAt(idx);
+    } else {
+      state = [...state, deviceId];
+      _box.add(deviceId);
+    }
+  }
+}

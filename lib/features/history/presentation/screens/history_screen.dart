@@ -1,10 +1,14 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:gap/gap.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 
 import '../../../../shared/models/transfer_model.dart';
+import '../../../../shared/providers/discovery_provider.dart';
 import '../../../../shared/providers/transfer_provider.dart';
+import '../../../../shared/providers/transfer_service_provider.dart';
 import '../../../../shared/widgets/help_guide_sheet.dart';
 
 class HistoryScreen extends ConsumerWidget {
@@ -43,7 +47,7 @@ class HistoryScreen extends ConsumerWidget {
                 itemCount: history.length,
                 itemBuilder: (context, index) => _HistoryTile(
                   transfer: history[index],
-                  onTap: () => _showDetail(context, history[index]),
+                  onTap: () => _showDetail(context, ref, history[index]),
                   onDelete: () {
                     ref
                         .read(transferHistoryProvider.notifier)
@@ -82,10 +86,19 @@ class HistoryScreen extends ConsumerWidget {
     );
   }
 
-  void _showDetail(BuildContext context, TransferModel transfer) {
+  void _showDetail(BuildContext context, WidgetRef ref, TransferModel transfer) {
+    final bool canResend = transfer.direction == TransferDirection.sent &&
+        (transfer.state == TransferState.failed ||
+            transfer.state == TransferState.cancelled) &&
+        File(transfer.filePath).existsSync();
+
+    final bool failedReceive = transfer.direction == TransferDirection.received &&
+        (transfer.state == TransferState.failed ||
+            transfer.state == TransferState.cancelled);
+
     showModalBottomSheet(
       context: context,
-      builder: (context) => SafeArea(
+      builder: (ctx) => SafeArea(
         child: Padding(
           padding: const EdgeInsets.all(24),
           child: Column(
@@ -94,7 +107,7 @@ class HistoryScreen extends ConsumerWidget {
             children: [
               Text(
                 transfer.fileName,
-                style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                style: Theme.of(ctx).textTheme.titleMedium?.copyWith(
                       fontWeight: FontWeight.w600,
                     ),
               ),
@@ -115,11 +128,82 @@ class HistoryScreen extends ConsumerWidget {
                   'Duration',
                   '${(transfer.duration! / 1000).toStringAsFixed(1)}s',
                 ),
-              const Gap(24),
+              if (transfer.errorMessage != null) ...
+                [_DetailRow('Error', transfer.errorMessage!)],
+              const Gap(16),
+              if (canResend) ...
+                [
+                  SizedBox(
+                    width: double.infinity,
+                    child: FilledButton.icon(
+                      icon: const Icon(LucideIcons.refreshCw, size: 16),
+                      label: const Text('Resend'),
+                      onPressed: () async {
+                        Navigator.pop(ctx);
+                        final allDevices = ref.read(allNearbyDevicesProvider);
+                        final target = allDevices
+                            .where((d) => d.id == transfer.deviceId)
+                            .firstOrNull;
+                        if (target == null) {
+                          if (context.mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text(
+                                    '${transfer.deviceName} is not available'),
+                              ),
+                            );
+                          }
+                          return;
+                        }
+                        ref.read(transferControllerProvider).sendFiles(
+                              filePaths: [transfer.filePath],
+                              target: target,
+                            );
+                      },
+                    ),
+                  ),
+                  const Gap(8),
+                ]
+              else if (failedReceive) ...
+                [
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 12, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: Theme.of(ctx)
+                          .colorScheme
+                          .surfaceContainerHighest,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(LucideIcons.info,
+                            size: 14,
+                            color: Theme.of(ctx)
+                                .colorScheme
+                                .onSurfaceVariant),
+                        const Gap(8),
+                        Expanded(
+                          child: Text(
+                            'Ask ${transfer.deviceName} to resend this file.',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Theme.of(ctx)
+                                  .colorScheme
+                                  .onSurfaceVariant,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const Gap(8),
+                ],
               SizedBox(
                 width: double.infinity,
                 child: OutlinedButton(
-                  onPressed: () => Navigator.pop(context),
+                  onPressed: () => Navigator.pop(ctx),
                   child: const Text('Close'),
                 ),
               ),

@@ -116,10 +116,31 @@ class TransferController {
   void sendFiles({
     required List<String> filePaths,
     required DeviceModel target,
+    TransferPriority priority = TransferPriority.normal,
   }) {
     // Sync auto-convert setting before sending
     _service.autoConvertEnabled = _ref.read(autoConvertProvider);
-    _service.enqueueFiles(filePaths: filePaths, target: target);
+    _service.enqueueFiles(filePaths: filePaths, target: target, priority: priority);
+  }
+
+  /// Schedule files to be sent at a specific time
+  void scheduleFiles({
+    required List<String> filePaths,
+    required DeviceModel target,
+    required DateTime scheduledAt,
+    TransferPriority priority = TransferPriority.normal,
+  }) {
+    _service.autoConvertEnabled = _ref.read(autoConvertProvider);
+    _service.scheduleTransfer(
+        filePaths: filePaths,
+        target: target,
+        scheduledAt: scheduledAt,
+        priority: priority);
+  }
+
+  /// Set bandwidth cap (bytes/sec). 0 = unlimited.
+  void setBandwidthLimit(int bytesPerSec) {
+    _service.bandwidthLimitBytesPerSec = bytesPerSec;
   }
 
   /// Pause an active transfer

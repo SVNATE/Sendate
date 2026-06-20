@@ -113,3 +113,51 @@ class AutoAcceptNotifier extends StateNotifier<bool> {
     await box.put('auto_accept_trusted', state);
   }
 }
+
+/// Hidden Mode toggle — device stops announcing itself for discovery.
+/// Backend (discoveryService.hiddenMode) is set from main.dart on state change.
+final hiddenModeProvider = StateNotifierProvider<HiddenModeNotifier, bool>(
+  (ref) => HiddenModeNotifier(),
+);
+
+class HiddenModeNotifier extends StateNotifier<bool> {
+  HiddenModeNotifier() : super(_load());
+
+  static bool _load() {
+    final box = Hive.box(AppConstants.settingsBox);
+    return box.get('hidden_mode', defaultValue: false) as bool;
+  }
+
+  Future<void> toggle() async {
+    state = !state;
+    final box = Hive.box(AppConstants.settingsBox);
+    await box.put('hidden_mode', state);
+  }
+}
+
+/// Transfer expiry duration provider — determines how long received files are kept.
+/// null = keep forever.
+final transferExpiryProvider =
+    StateNotifierProvider<TransferExpiryNotifier, Duration?>(
+  (ref) => TransferExpiryNotifier(),
+);
+
+class TransferExpiryNotifier extends StateNotifier<Duration?> {
+  TransferExpiryNotifier() : super(_load());
+
+  static Duration? _load() {
+    final box = Hive.box(AppConstants.settingsBox);
+    final hours = box.get('transfer_expiry_hours') as int?;
+    return hours == null ? null : Duration(hours: hours);
+  }
+
+  Future<void> setExpiry(Duration? expiry) async {
+    state = expiry;
+    final box = Hive.box(AppConstants.settingsBox);
+    if (expiry == null) {
+      await box.delete('transfer_expiry_hours');
+    } else {
+      await box.put('transfer_expiry_hours', expiry.inHours);
+    }
+  }
+}

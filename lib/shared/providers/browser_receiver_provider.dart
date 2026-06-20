@@ -10,3 +10,5 @@ final browserReceiverServiceProvider = Provider<BrowserReceiverService>((ref) {
 
 final browserReceiverActiveProvider = StateProvider<bool>((ref) => false);
 final browserReceiverUrlProvider = StateProvider<String?>((ref) => null);
+/// Optional password used for browser receiver sessions.
+final browserReceiverPasswordProvider = StateProvider<String?>((ref) => null);

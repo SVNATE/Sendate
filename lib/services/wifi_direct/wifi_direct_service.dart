@@ -78,6 +78,23 @@ class WifiDirectService {
     }
   }
 
+  /// Request current group info and update [groupOwnerIp].
+  /// Call this after [connect] / [onConnected] fires to obtain the IP of the
+  /// group owner — the non-owner device needs this IP to open a TCP connection.
+  Future<String?> requestGroupInfo() async {
+    try {
+      final result = await _channel.invokeMethod<Map>('getGroupInfo');
+      if (result != null) {
+        _groupOwnerIp = result['groupOwnerAddress'] as String?;
+        _log.debug('Group owner IP: $_groupOwnerIp');
+      }
+      return _groupOwnerIp;
+    } catch (e) {
+      _log.debug('getGroupInfo failed: $e');
+      return null;
+    }
+  }
+
   Future<dynamic> _handleMethodCall(MethodCall call) async {
     switch (call.method) {
       case 'onPeersFound':
@@ -99,6 +116,8 @@ class WifiDirectService {
       case 'onConnected':
         final args = Map<String, dynamic>.from(call.arguments as Map);
         _groupOwnerIp = args['groupOwnerAddress'] as String?;
+        // Auto-fetch accurate IP via getGroupInfo (broadcasts can carry stale address)
+        Future.delayed(const Duration(seconds: 1), requestGroupInfo);
       case 'onDisconnected':
         _groupOwnerIp = null;
     }

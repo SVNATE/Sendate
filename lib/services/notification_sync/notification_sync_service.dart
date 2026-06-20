@@ -119,6 +119,12 @@ class NotificationSyncService {
   String _localDeviceId = '';
   String _localDeviceName = '';
 
+  /// Package names that are blocked from being synced (empty = allow all).
+  final Set<String> _blockedPackages = {};
+
+  /// Device IDs that have notification sync explicitly disabled.
+  final Set<String> _disabledDeviceIds = {};
+
   /// Stream of notifications received from remote devices
   Stream<SyncedNotification> get receivedNotifications =>
       _receivedNotificationsController.stream;
@@ -129,6 +135,13 @@ class NotificationSyncService {
 
   bool get isEnabled => _isEnabled;
   bool get isListenerActive => _isListenerActive;
+
+  /// Per-app filter — read-only view.
+  Set<String> get blockedPackages => Set.unmodifiable(_blockedPackages);
+
+  /// Per-device sync disabled set — read-only view.
+  Set<String> get disabledDeviceIds => Set.unmodifiable(_disabledDeviceIds);
+
 
   /// Initialize the service with local device info
   void initialize({required String deviceId, required String deviceName}) {
@@ -239,6 +252,13 @@ class NotificationSyncService {
   /// Called when a new notification appears on this device — broadcast to connected devices
   void onLocalNotificationPosted(Map<String, dynamic> data) {
     if (!_isEnabled) return;
+
+    // Per-app filter
+    final pkg = data['packageName'] as String? ?? '';
+    if (_blockedPackages.contains(pkg)) {
+      _log.debug('Filtered notification from $pkg');
+      return;
+    }
 
     // Add source device info if not already present
     data['sourceDeviceId'] ??= _localDeviceId;
@@ -360,10 +380,26 @@ class NotificationSyncService {
         case 'notification_removed':
           final id = json['id'] as String? ?? '';
           onRemoteNotificationRemoved(id);
+        case 'notification_action':
+          // A remote device wants to invoke one of our notification actions
+          _handleRemoteAction(json);
       }
     } catch (e) {
       _log.debug('Failed to process incoming message: $e');
     }
+  }
+
+  /// Execute an action forwarded from a remote device on the local Android system.
+  void _handleRemoteAction(Map<String, dynamic> json) {
+    if (!Platform.isAndroid) return;
+    final notifId = json['notificationId'] as String? ?? '';
+    final actionIdx = json['actionIndex'] as int? ?? 0;
+    _notificationChannel
+        .invokeMethod('performAction', {
+          'notificationId': notifId,
+          'actionIndex': actionIdx,
+        })
+        .catchError((e) => _log.debug('performAction failed: $e'));
   }
 
   void _saveToHistory(SyncedNotification notification) {
@@ -381,6 +417,79 @@ class NotificationSyncService {
       });
     } catch (e) {
       _log.debug('Failed to save notification to history: $e');
+    }
+  }
+
+  // ── Per-app filter ─────────────────────────────────────────────────────────
+
+  void blockPackage(String packageName) {
+    _blockedPackages.add(packageName);
+    _persistFilter();
+  }
+
+  void unblockPackage(String packageName) {
+    _blockedPackages.remove(packageName);
+    _persistFilter();
+  }
+
+  void loadFilter(List<String> blockedList) {
+    _blockedPackages
+      ..clear()
+      ..addAll(blockedList);
+  }
+
+  void _persistFilter() {
+    try {
+      Hive.box(AppConstants.settingsBox)
+          .put('notif_blocked_packages', _blockedPackages.toList());
+    } catch (e) {
+      _log.debug('Failed to persist filter: $e');
+    }
+  }
+
+  // ── Per-device sync toggle ─────────────────────────────────────────────────
+
+  void disableSyncForDevice(String deviceId) => _disabledDeviceIds.add(deviceId);
+  void enableSyncForDevice(String deviceId) => _disabledDeviceIds.remove(deviceId);
+  bool isSyncEnabledForDevice(String deviceId) =>
+      !_disabledDeviceIds.contains(deviceId);
+
+  // ── Notification action forwarding ─────────────────────────────────────────
+
+  /// Forward a notification action back to the originating device so it can
+  /// invoke the action on the Android side (e.g. reply, dismiss).
+  Future<void> forwardAction({
+    required String notificationId,
+    required String targetDeviceId,
+    required int actionIndex,
+  }) async {
+    final targetDevice = _knownDevices
+        .where((d) => d.id == targetDeviceId && d.ipAddress != null)
+        .firstOrNull;
+    if (targetDevice == null) {
+      _log.debug('Cannot forward action — device $targetDeviceId not found');
+      return;
+    }
+
+    final message = jsonEncode({
+      'type': 'notification_action',
+      'notificationId': notificationId,
+      'actionIndex': actionIndex,
+      'sourceDeviceId': _localDeviceId,
+    });
+
+    try {
+      final socket = await Socket.connect(
+        targetDevice.ipAddress!,
+        AppConstants.transferPort + 3,
+        timeout: const Duration(seconds: 3),
+      );
+      socket.add(utf8.encode('$message\n'));
+      await socket.flush();
+      await socket.close();
+      _log.debug('Action forwarded to ${targetDevice.name}');
+    } catch (e) {
+      _log.debug('Action forward failed: $e');
     }
   }
 

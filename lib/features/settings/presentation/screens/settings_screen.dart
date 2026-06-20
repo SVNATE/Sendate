@@ -2,10 +2,12 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:gap/gap.dart';
+import 'package:go_router/go_router.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 
 import '../../../../core/utils/platform_capabilities.dart';
 import '../../../../shared/providers/clipboard_provider.dart';
+import '../../../../shared/providers/discovery_provider.dart';
 import '../../../../shared/providers/notification_sync_provider.dart';
 import '../../../../shared/providers/settings_provider.dart';
 import '../../../../shared/widgets/help_guide_sheet.dart';
@@ -23,6 +25,8 @@ class SettingsScreen extends ConsumerWidget {
     final autoAccept = ref.watch(autoAcceptProvider);
     final saveLocation = ref.watch(saveLocationProvider);
     final themeMode = ref.watch(themeModeProvider);
+    final hiddenMode = ref.watch(hiddenModeProvider);
+    final expiry = ref.watch(transferExpiryProvider);
 
     final themeName = switch (themeMode) {
       ThemeMode.light => 'Light',
@@ -92,6 +96,12 @@ class SettingsScreen extends ConsumerWidget {
                       onChanged: (_) =>
                           ref.read(autoAcceptProvider.notifier).toggle(),
                     ),
+                    _SettingsItem(
+                      icon: LucideIcons.timer,
+                      title: 'File Expiry',
+                      subtitle: _expiryLabel(expiry),
+                      onTap: () => _showExpiryDialog(context, ref),
+                    ),
                     _SettingsToggleItem(
                       icon: LucideIcons.clipboard,
                       title: 'Clipboard Sync',
@@ -139,11 +149,26 @@ class SettingsScreen extends ConsumerWidget {
                       subtitle: 'TLS 1.3 + AES-256',
                       onTap: () => _showEncryptionInfo(context),
                     ),
-                    _SettingsItem(
+                    _SettingsToggleItem(
                       icon: LucideIcons.eyeOff,
                       title: 'Hidden Mode',
-                      subtitle: 'Only accessible via QR or code',
-                      onTap: () => _showComingSoon(context),
+                      subtitle: hiddenMode
+                          ? 'Invisible — share QR or code to connect'
+                          : 'Appear to nearby devices',
+                      value: hiddenMode,
+                      onChanged: (_) => _toggleHiddenMode(ref),
+                    ),
+                  ],
+                ),
+                const Gap(24),
+                _SettingsSection(
+                  title: 'Tools',
+                  children: [
+                    _SettingsItem(
+                      icon: LucideIcons.folderSync,
+                      title: 'Folder Sync',
+                      subtitle: 'Auto-sync folders with nearby devices',
+                      onTap: () => context.push('/folder-sync'),
                     ),
                   ],
                 ),
@@ -270,6 +295,68 @@ class SettingsScreen extends ConsumerWidget {
             child: const Text('OK'),
           ),
         ],
+      ),
+    );
+  }
+
+  void _toggleHiddenMode(WidgetRef ref) {
+    final notifier = ref.read(hiddenModeProvider.notifier);
+    final newVal = !ref.read(hiddenModeProvider);
+    notifier.toggle();
+    // Wire directly to discovery service
+    ref.read(discoveryServiceProvider).hiddenMode = newVal;
+  }
+
+  String _expiryLabel(Duration? expiry) {
+    if (expiry == null) return 'Keep forever';
+    if (expiry.inHours == 1) return '1 hour';
+    if (expiry.inHours < 24) return '${expiry.inHours} hours';
+    if (expiry.inDays == 1) return '1 day';
+    return '${expiry.inDays} days';
+  }
+
+  void _showExpiryDialog(BuildContext context, WidgetRef ref) {
+    final options = <MapEntry<String, Duration?>>[
+      const MapEntry('1 hour', Duration(hours: 1)),
+      const MapEntry('1 day', Duration(hours: 24)),
+      const MapEntry('7 days', Duration(days: 7)),
+      const MapEntry('30 days', Duration(days: 30)),
+      const MapEntry('Keep forever', null),
+    ];
+    showModalBottomSheet(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Padding(
+              padding: EdgeInsets.all(16),
+              child: Text(
+                'File Expiry',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+              ),
+            ),
+            ...options.map(
+              (opt) => ListTile(
+                title: Text(opt.key),
+                leading: Icon(opt.value == null
+                    ? LucideIcons.infinity
+                    : LucideIcons.timer),
+                trailing: ref.read(transferExpiryProvider) == opt.value
+                    ? Icon(LucideIcons.check,
+                        color: Theme.of(context).colorScheme.primary)
+                    : null,
+                onTap: () {
+                  Navigator.pop(ctx);
+                  ref
+                      .read(transferExpiryProvider.notifier)
+                      .setExpiry(opt.value);
+                },
+              ),
+            ),
+            const Gap(8),
+          ],
+        ),
       ),
     );
   }
