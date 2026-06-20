@@ -36,8 +36,6 @@ class SendateForegroundService : Service() {
         const val CHANNEL_ID = "sendate_foreground_channel"
         const val NOTIFICATION_ID = 1001
         const val ACTION_STOP = "com.svnate.sendate.ACTION_STOP"
-        const val ACTION_SEND_CLIPBOARD = "com.svnate.sendate.ACTION_SEND_CLIPBOARD"
-        const val ACTION_SEND_FILES = "com.svnate.sendate.ACTION_SEND_FILES"
         const val SERVICE_CHANNEL_NAME = "com.svnate.sendate/foreground_service"
         const val CLIPBOARD_CHANNEL_NAME = "com.svnate.sendate/native_clipboard"
         const val NOTIFICATION_LISTENER_CHANNEL_NAME = "com.svnate.sendate/notification_listener"
@@ -75,9 +73,12 @@ class SendateForegroundService : Service() {
                         .setPriority(NotificationCompat.PRIORITY_LOW)
 
                     if (deviceNames.isNotEmpty()) {
-                        val clipboardIntent = Intent(context, SendateForegroundService::class.java)
-                        clipboardIntent.action = ACTION_SEND_CLIPBOARD
-                        val clipboardPendingIntent = PendingIntent.getService(
+                        // Use getActivity() for the same reasons as buildNotification()
+                        val clipboardIntent = Intent(context, MainActivity::class.java).apply {
+                            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
+                            putExtra("notification_action", "send_clipboard")
+                        }
+                        val clipboardPendingIntent = PendingIntent.getActivity(
                             context, 2, clipboardIntent,
                             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
                         )
@@ -116,31 +117,6 @@ class SendateForegroundService : Service() {
                 stopForeground(STOP_FOREGROUND_REMOVE)
                 stopSelf()
                 return START_NOT_STICKY
-            }
-            ACTION_SEND_CLIPBOARD -> {
-                Log.d(TAG, "Send Clipboard action from notification")
-                // Send directly via background engine — no need to launch activity
-                // The background engine loads trusted device IPs from Hive as fallback
-                if (serviceChannel != null) {
-                    serviceChannel?.invokeMethod("onSendClipboard", null)
-                } else {
-                    // Background engine not ready yet — launch activity as fallback
-                    Log.w(TAG, "Background engine not ready, launching activity for clipboard")
-                    val launchIntent = Intent(this, MainActivity::class.java)
-                    launchIntent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
-                    launchIntent.putExtra("notification_action", "send_clipboard")
-                    startActivity(launchIntent)
-                }
-                return START_STICKY
-            }
-            ACTION_SEND_FILES -> {
-                Log.d(TAG, "Send Files action from notification — launching activity with file picker")
-                // Must launch activity for file picker (needs UI context)
-                val launchIntent = Intent(this, MainActivity::class.java)
-                launchIntent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
-                launchIntent.putExtra("notification_action", "pick_files")
-                startActivity(launchIntent)
-                return START_STICKY
             }
         }
 
@@ -316,19 +292,30 @@ class SendateForegroundService : Service() {
             .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
 
-        // Action buttons only when devices are connected
+        // Action buttons only when devices are connected.
+        // IMPORTANT: Use PendingIntent.getActivity() (not getService()) for both buttons.
+        // Reason 1: Android 10+ blocks background services from reading the clipboard
+        //           (getPrimaryClip() returns null). The Activity has foreground focus,
+        //           so clipboard reads succeed when launched via getActivity().
+        // Reason 2: Android 10+ blocks background services from starting Activities via
+        //           startActivity(). PendingIntent.getActivity() tapped by the user is
+        //           an explicitly allowed exemption from that restriction.
         if (deviceNames.isNotEmpty()) {
-            val clipboardIntent = Intent(this, SendateForegroundService::class.java)
-            clipboardIntent.action = ACTION_SEND_CLIPBOARD
-            val clipboardPendingIntent = PendingIntent.getService(
+            val clipboardIntent = Intent(this, MainActivity::class.java).apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
+                putExtra("notification_action", "send_clipboard")
+            }
+            val clipboardPendingIntent = PendingIntent.getActivity(
                 this, 2, clipboardIntent,
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
             )
             builder.addAction(android.R.drawable.ic_menu_share, "Send Clipboard", clipboardPendingIntent)
 
-            val filesIntent = Intent(this, SendateForegroundService::class.java)
-            filesIntent.action = ACTION_SEND_FILES
-            val filesPendingIntent = PendingIntent.getService(
+            val filesIntent = Intent(this, MainActivity::class.java).apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
+                putExtra("notification_action", "pick_files")
+            }
+            val filesPendingIntent = PendingIntent.getActivity(
                 this, 3, filesIntent,
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
             )
