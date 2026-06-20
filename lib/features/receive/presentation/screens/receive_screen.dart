@@ -389,9 +389,9 @@ class _BrowserReceiverToggleState
     }
     final ip =
         await ref.read(networkServiceProvider).getLocalIp();
-    final urlBase = 'http://\$ip:\${service.port}';
+    final urlBase = 'http://$ip:${service.port}';
     final receiverUrl =
-        password != null ? '\$urlBase?pwd=\$password' : urlBase;
+        password != null ? '$urlBase?pwd=$password' : urlBase;
     ref.read(browserReceiverActiveProvider.notifier).state = true;
     ref.read(browserReceiverUrlProvider.notifier).state = receiverUrl;
     ref.read(browserReceiverPasswordProvider.notifier).state = password;
