@@ -62,23 +62,44 @@ class ClipboardSyncService {
 
   /// Start clipboard monitoring using NATIVE listener
   void startAutoSync() {
+    debugPrint('[ClipboardSync] === startAutoSync() called ===');
+    debugPrint('[ClipboardSync] _autoSyncEnabled was: $_autoSyncEnabled');
     _autoSyncEnabled = true;
+    debugPrint('[ClipboardSync] Calling _nativeListener.start()...');
     _nativeListener.start();
     _nativeSubscription?.cancel();
-    _nativeSubscription = _nativeListener.clipboardChanges.listen((text) {
-      if (!_autoSyncEnabled) return;
-      if (text == _lastClipboardContent) return;
+    debugPrint('[ClipboardSync] Subscribing to clipboardChanges stream...');
+    _nativeSubscription = _nativeListener.clipboardChanges.listen(
+      (text) {
+        debugPrint('[ClipboardSync] clipboardChanges event received! text length=${text.length}');
+        debugPrint('[ClipboardSync] _autoSyncEnabled=$_autoSyncEnabled, lastContent same=${text == _lastClipboardContent}');
+        debugPrint('[ClipboardSync] connectedDevices=${_connectedDevices.length}, knownDevices=${_knownDevices.length}');
+        if (!_autoSyncEnabled) {
+          debugPrint('[ClipboardSync] SKIPPED: auto-sync disabled');
+          return;
+        }
+        if (text == _lastClipboardContent) {
+          debugPrint('[ClipboardSync] SKIPPED: same as last content');
+          return;
+        }
 
-      _lastClipboardContent = text;
+        _lastClipboardContent = text;
 
-      // Only broadcast if we have targets; otherwise just track the content
-      // so we can send it when devices appear
-      if (_connectedDevices.isNotEmpty || _knownDevices.isNotEmpty) {
-        broadcastClipboard(text);
-      } else {
-        debugPrint('[ClipboardSync] Clipboard changed but no devices available yet');
-      }
-    });
+        // Only broadcast if we have targets; otherwise just track the content
+        if (_connectedDevices.isNotEmpty || _knownDevices.isNotEmpty) {
+          debugPrint('[ClipboardSync] Broadcasting to ${_connectedDevices.length} connected + ${_knownDevices.length} known devices');
+          broadcastClipboard(text);
+        } else {
+          debugPrint('[ClipboardSync] Clipboard changed but no devices available yet');
+        }
+      },
+      onError: (e) {
+        debugPrint('[ClipboardSync] clipboardChanges stream ERROR: $e');
+      },
+      onDone: () {
+        debugPrint('[ClipboardSync] clipboardChanges stream DONE (closed)');
+      },
+    );
     debugPrint('[ClipboardSync] Auto-sync started. Connected: ${_connectedDevices.length}, Known: ${_knownDevices.length}');
   }
 
@@ -106,8 +127,13 @@ class ClipboardSyncService {
 
   /// Update the list of known (discovered) devices
   void updateKnownDevices(List<DeviceModel> devices) {
+    final validDevices = devices.where((d) => d.ipAddress != null).toList();
+    debugPrint('[ClipboardSync] updateKnownDevices: received ${devices.length} total, ${validDevices.length} with IP');
+    for (final d in validDevices) {
+      debugPrint('[ClipboardSync]   - ${d.name} @ ${d.ipAddress}:${d.port}');
+    }
     _knownDevices.clear();
-    _knownDevices.addAll(devices.where((d) => d.ipAddress != null));
+    _knownDevices.addAll(validDevices);
   }
 
   /// Send current clipboard to ALL known/connected devices
@@ -210,28 +236,22 @@ class ClipboardSyncService {
     _saveToHistory(content, senderName);
   }
 
-  /// Encrypt and send clipboard via persistent socket
+  /// Send clipboard via persistent socket using line-delimited JSON protocol
+  /// (matches PersistentConnectionService's message format that the receiver expects)
   Future<bool> _sendViaSocket(Socket socket, String text) async {
     try {
-      final key = await _getOrCreateSessionKey();
-      final plainPayload = jsonEncode({
+      final payload = jsonEncode({
         'type': 'clipboard',
         'content': text,
+        'deviceId': '', // Will be filled by receiver from socket identity
+        'deviceName': '',
         'timestamp': DateTime.now().millisecondsSinceEpoch,
       });
 
-      // Encrypt the payload
-      final encrypted = await _encryption.encryptChunk(
-        Uint8List.fromList(utf8.encode(plainPayload)),
-        key,
-      );
-
-      // Protocol: [4-byte length][1-byte flags (0x01 = encrypted)][encrypted data]
-      final totalLen = 1 + encrypted.length;
-      socket.add(_intToBytes(totalLen));
-      socket.add([0x01]); // Encrypted flag
-      socket.add(encrypted);
+      // Use the same newline-delimited JSON protocol as PersistentConnectionService
+      socket.add(utf8.encode('$payload\n'));
       await socket.flush();
+      debugPrint('[ClipboardSync] Socket send SUCCESS (${text.length} chars)');
       return true;
     } catch (e) {
       debugPrint('[ClipboardSync] Socket send error: $e');
@@ -273,15 +293,19 @@ class ClipboardSyncService {
 
   /// Start clipboard receive server
   Future<ServerSocket?> startServer(int port) async {
-    if (_isListening) return null;
+    debugPrint('[ClipboardSync] startServer called with base port=$port, will bind to port ${port + 2}');
+    if (_isListening) {
+      debugPrint('[ClipboardSync] Server already listening, skipping');
+      return null;
+    }
     try {
       final server = await ServerSocket.bind(InternetAddress.anyIPv4, port + 2);
       _isListening = true;
       server.listen(_handleIncoming);
-      debugPrint('[ClipboardSync] Server started on port ${port + 2}');
+      debugPrint('[ClipboardSync] Server started successfully on port ${port + 2}');
       return server;
     } catch (e) {
-      debugPrint('[ClipboardSync] Failed to start server: $e');
+      debugPrint('[ClipboardSync] Failed to start server on port ${port + 2}: $e');
       return null;
     }
   }

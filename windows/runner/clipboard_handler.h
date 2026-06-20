@@ -31,15 +31,15 @@ class ClipboardHandler {
   // Stop monitoring clipboard changes.
   void StopMonitoring();
 
+  // Called when WM_CLIPBOARDUPDATE is received on the hidden window.
+  void OnClipboardChanged();
+
  private:
   // Get current clipboard text content using Win32 API.
   std::string GetClipboardText();
 
   // Set clipboard text content using Win32 API.
   bool SetClipboardText(const std::string& text);
-
-  // Called when WM_CLIPBOARDUPDATE is received.
-  void OnClipboardChanged();
 
   flutter::FlutterEngine* engine_ = nullptr;
   std::unique_ptr<flutter::MethodChannel<flutter::EncodableValue>> channel_;

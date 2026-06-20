@@ -320,8 +320,13 @@ class _SendateAppState extends ConsumerState<SendateApp> {
 
       final clipboardService = ref.read(clipboardSyncServiceProvider);
       clipboardService.startServer(AppConstants.transferPort);
-      if (ref.read(clipboardAutoSyncProvider)) {
+      final autoSyncEnabled = ref.read(clipboardAutoSyncProvider);
+      debugPrint('[Main] Clipboard auto-sync setting: $autoSyncEnabled');
+      if (autoSyncEnabled) {
+        debugPrint('[Main] Starting clipboard auto-sync from _initTransferServer...');
         clipboardService.startAutoSync();
+      } else {
+        debugPrint('[Main] Clipboard auto-sync is DISABLED in settings');
       }
 
       ref.read(persistentConnectionProvider).start();

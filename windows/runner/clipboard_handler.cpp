@@ -1,9 +1,24 @@
 #include "clipboard_handler.h"
 
 #include <flutter/encodable_value.h>
+#include <windows.h>
 
 #include <codecvt>
 #include <locale>
+#include <string>
+
+// Static instance pointer for the WndProc callback
+static ClipboardHandler* g_clipboard_handler = nullptr;
+
+// WndProc for the hidden clipboard-monitoring window
+static LRESULT CALLBACK ClipboardWndProc(HWND hwnd, UINT message,
+                                         WPARAM wparam, LPARAM lparam) {
+  if (message == WM_CLIPBOARDUPDATE && g_clipboard_handler) {
+    g_clipboard_handler->OnClipboardChanged();
+    return 0;
+  }
+  return DefWindowProc(hwnd, message, wparam, lparam);
+}
 
 ClipboardHandler::ClipboardHandler() {}
 
@@ -11,6 +26,7 @@ ClipboardHandler::~ClipboardHandler() { StopMonitoring(); }
 
 void ClipboardHandler::Register(flutter::FlutterEngine* engine) {
   engine_ = engine;
+  g_clipboard_handler = this;
 
   channel_ = std::make_unique<flutter::MethodChannel<flutter::EncodableValue>>(
       engine->messenger(), "com.svnate.sendate/native_clipboard",
@@ -21,7 +37,7 @@ void ClipboardHandler::Register(flutter::FlutterEngine* engine) {
              std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>>
                  result) {
         if (call.method_name() == "startMonitoring") {
-          // Already started via StartMonitoring(hwnd) in OnCreate
+          // Already started via StartMonitoring() in OnCreate
           result->Success();
         } else if (call.method_name() == "stopMonitoring") {
           StopMonitoring();
@@ -49,29 +65,51 @@ void ClipboardHandler::Register(flutter::FlutterEngine* engine) {
       });
 }
 
-void ClipboardHandler::StartMonitoring(HWND hwnd) {
+void ClipboardHandler::StartMonitoring(HWND /* parent - unused now */) {
   if (monitoring_) return;
-  hwnd_ = hwnd;
+
+  // Create a hidden message-only window dedicated to clipboard monitoring.
+  // This avoids interference from Flutter's own message handling on the main window.
+  const wchar_t* kClassName = L"SendateClipboardListener";
+
+  WNDCLASSEXW wc = {};
+  wc.cbSize = sizeof(WNDCLASSEXW);
+  wc.lpfnWndProc = ClipboardWndProc;
+  wc.hInstance = GetModuleHandle(nullptr);
+  wc.lpszClassName = kClassName;
+  RegisterClassExW(&wc);
+
+  // HWND_MESSAGE windows may not receive WM_CLIPBOARDUPDATE on some Windows
+  // versions. Use a regular hidden window (WS_POPUP, zero size, not shown).
+  hwnd_ = CreateWindowExW(0, kClassName, L"", WS_POPUP, 0, 0, 0, 0, nullptr,
+                          nullptr, GetModuleHandle(nullptr), nullptr);
+
+  if (!hwnd_) {
+    return;
+  }
+
   if (AddClipboardFormatListener(hwnd_)) {
     monitoring_ = true;
-    // Capture the current clipboard content to avoid a false initial change
     last_content_ = GetClipboardText();
+  } else {
+    DestroyWindow(hwnd_);
+    hwnd_ = nullptr;
   }
 }
 
 void ClipboardHandler::StopMonitoring() {
   if (monitoring_ && hwnd_) {
     RemoveClipboardFormatListener(hwnd_);
+    DestroyWindow(hwnd_);
+    hwnd_ = nullptr;
     monitoring_ = false;
   }
 }
 
 bool ClipboardHandler::HandleWindowMessage(HWND hwnd, UINT message,
                                            WPARAM wparam, LPARAM lparam) {
-  if (message == WM_CLIPBOARDUPDATE) {
-    OnClipboardChanged();
-    return true;
-  }
+  // No longer needed — we use a dedicated hidden window.
+  // Keep the method for API compatibility but it's a no-op.
   return false;
 }
 
@@ -95,7 +133,6 @@ void ClipboardHandler::OnClipboardChanged() {
 
 std::string ClipboardHandler::GetClipboardText() {
   // Use nullptr to open clipboard without requiring a specific window to be active.
-  // This ensures clipboard access works even when our window is hidden (system tray).
   if (!OpenClipboard(nullptr)) return "";
 
   std::string result;
@@ -103,11 +140,10 @@ std::string ClipboardHandler::GetClipboardText() {
   if (hData) {
     wchar_t* pData = static_cast<wchar_t*>(GlobalLock(hData));
     if (pData) {
-      // Convert wide string to UTF-8
       int size_needed = WideCharToMultiByte(CP_UTF8, 0, pData, -1, nullptr, 0,
                                             nullptr, nullptr);
       if (size_needed > 0) {
-        result.resize(size_needed - 1);  // -1 to exclude null terminator
+        result.resize(size_needed - 1);
         WideCharToMultiByte(CP_UTF8, 0, pData, -1, &result[0], size_needed,
                             nullptr, nullptr);
       }
@@ -120,12 +156,10 @@ std::string ClipboardHandler::GetClipboardText() {
 }
 
 bool ClipboardHandler::SetClipboardText(const std::string& text) {
-  // Convert UTF-8 to wide string
   int wide_size =
       MultiByteToWideChar(CP_UTF8, 0, text.c_str(), -1, nullptr, 0);
   if (wide_size <= 0) return false;
 
-  // Use nullptr to open clipboard without requiring window focus
   if (!OpenClipboard(nullptr)) return false;
 
   EmptyClipboard();
