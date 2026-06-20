@@ -139,6 +139,13 @@ class MainActivity : FlutterFragmentActivity() {
                     SendateForegroundService.updateNotificationFromUI(this, title, body, devices)
                     result.success(true)
                 }
+                "updateClipboardAutoSync" -> {
+                    // Settings toggle in main UI — forward to background engine so it
+                    // can start/stop its own ClipboardSyncService.startAutoSync()
+                    val enabled = call.arguments as? Boolean ?: false
+                    SendateForegroundService.forwardClipboardAutoSync(enabled)
+                    result.success(true)
+                }
                 else -> result.notImplemented()
             }
         }

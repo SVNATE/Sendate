@@ -24,6 +24,10 @@ class ClipboardSyncService {
   bool _isListening = false;
   final List<_ConnectedDevice> _connectedDevices = [];
 
+  /// Clipboard text that arrived while no devices were reachable.
+  /// Flushed automatically once devices become available.
+  String? _pendingClipboardText;
+
   /// Encryption key for clipboard messages (shared across trusted devices)
   Uint8List? _sessionKey;
 
@@ -85,12 +89,15 @@ class ClipboardSyncService {
 
         _lastClipboardContent = text;
 
-        // Only broadcast if we have targets; otherwise just track the content
+        // Only broadcast if we have targets; otherwise buffer for retry
         if (_connectedDevices.isNotEmpty || _knownDevices.isNotEmpty) {
+          _pendingClipboardText = null; // discard any older pending text
           debugPrint('[ClipboardSync] Broadcasting to ${_connectedDevices.length} connected + ${_knownDevices.length} known devices');
           broadcastClipboard(text);
         } else {
-          debugPrint('[ClipboardSync] Clipboard changed but no devices available yet');
+          // Save for retry — will be flushed when updateKnownDevices is called with devices
+          _pendingClipboardText = text;
+          debugPrint('[ClipboardSync] No devices yet — buffered clipboard change for retry');
         }
       },
       onError: (e) {
@@ -134,6 +141,14 @@ class ClipboardSyncService {
     }
     _knownDevices.clear();
     _knownDevices.addAll(validDevices);
+
+    // Flush any clipboard text that was buffered while no devices were available
+    if (_autoSyncEnabled && _pendingClipboardText != null && validDevices.isNotEmpty) {
+      final pending = _pendingClipboardText!;
+      _pendingClipboardText = null;
+      debugPrint('[ClipboardSync] Flushing buffered clipboard (${pending.length} chars) to ${validDevices.length} device(s)');
+      broadcastClipboard(pending);
+    }
   }
 
   /// Send current clipboard to ALL known/connected devices

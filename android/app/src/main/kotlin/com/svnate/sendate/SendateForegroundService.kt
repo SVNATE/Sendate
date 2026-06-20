@@ -45,6 +45,16 @@ class SendateForegroundService : Service() {
         fun isRunning(): Boolean = instance != null
 
         /**
+         * Forward a clipboard auto-sync toggle from the main UI engine to the
+         * background Dart engine. Called from MainActivity when the user changes
+         * the setting in Settings.
+         */
+        fun forwardClipboardAutoSync(enabled: Boolean) {
+            instance?.notifyClipboardAutoSync(enabled)
+                ?: Log.d(TAG, "forwardClipboardAutoSync: service not running, ignored")
+        }
+
+        /**
          * Called from MainActivity to update the foreground notification
          * when the main UI discovers devices.
          */
@@ -269,6 +279,18 @@ class SendateForegroundService : Service() {
         } catch (e: Exception) {
             Log.e(TAG, "Failed to update notification: ${e.message}", e)
         }
+    }
+
+    /**
+     * Forward a clipboard auto-sync state change into the background Dart engine.
+     * Called via the static [forwardClipboardAutoSync] bridge from MainActivity.
+     */
+    fun notifyClipboardAutoSync(enabled: Boolean) {
+        serviceChannel?.invokeMethod("updateClipboardAutoSync", enabled, object : io.flutter.plugin.common.MethodChannel.Result {
+            override fun success(result: Any?) { Log.d(TAG, "updateClipboardAutoSync=$enabled forwarded to background Dart") }
+            override fun error(code: String, msg: String?, details: Any?) { Log.w(TAG, "updateClipboardAutoSync error: $code $msg") }
+            override fun notImplemented() { Log.w(TAG, "updateClipboardAutoSync not implemented in background Dart") }
+        }) ?: Log.d(TAG, "notifyClipboardAutoSync: serviceChannel null, background engine not ready yet")
     }
 
     private fun buildNotification(title: String, body: String, deviceNames: List<String>): Notification {

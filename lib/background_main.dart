@@ -89,6 +89,10 @@ class _BackgroundService {
     // Start clipboard sync server
     _clipboardSyncService.startServer(AppConstants.transferPort);
 
+    // Pre-populate known devices from Hive so auto-sync can fire immediately
+    // even before UDP discovery finds the Mac/Windows device (2-5 s window).
+    _ensureKnownDevicesFromHive();
+
     // Start auto-sync if enabled
     final autoSync = settingsBox.get('clipboard_auto_sync', defaultValue: false) as bool;
     if (autoSync) {
@@ -148,6 +152,22 @@ class _BackgroundService {
           debugPrint('[BackgroundService] Clipboard send error: $e');
           return false;
         }
+
+      case 'updateClipboardAutoSync':
+        // Main engine toggled clipboard auto-sync on/off in Settings.
+        // Update background engine's clipboard service to match.
+        final enabled = call.arguments as bool? ?? false;
+        debugPrint('[BackgroundService] updateClipboardAutoSync: enabled=$enabled');
+        if (enabled && !_clipboardSyncService.isAutoSyncEnabled) {
+          _ensureKnownDevicesFromHive(); // make sure devices are loaded before starting
+          _clipboardSyncService.startAutoSync();
+          debugPrint('[BackgroundService] Auto-sync started from settings change');
+        } else if (!enabled && _clipboardSyncService.isAutoSyncEnabled) {
+          _clipboardSyncService.stopAutoSync();
+          debugPrint('[BackgroundService] Auto-sync stopped from settings change');
+        }
+        return true;
+
       default:
         return null;
     }

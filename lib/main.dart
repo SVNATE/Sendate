@@ -276,6 +276,12 @@ class _SendateAppState extends ConsumerState<SendateApp> {
         };
         // Check if there's a pending action from notification tap while app was backgrounded
         fgService.checkPendingAction();
+
+        // Forward auto-sync setting changes to the background engine so it stays in sync
+        // (background engine reads the setting once at start; this keeps it up-to-date)
+        ref.listen(clipboardAutoSyncProvider, (_, enabled) {
+          AndroidForegroundService.instance.updateClipboardAutoSync(enabled);
+        });
       }
 
       // Auto-start clipboard sync when devices are found

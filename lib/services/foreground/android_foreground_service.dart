@@ -107,6 +107,18 @@ class AndroidForegroundService {
     }
   }
 
+  /// Update the clipboard auto-sync state in the background engine.
+  /// Called when the user toggles the setting in the main UI.
+  Future<void> updateClipboardAutoSync(bool enabled) async {
+    if (!isSupported) return;
+    try {
+      await _channel.invokeMethod('updateClipboardAutoSync', enabled);
+      debugPrint('[ForegroundService] Forwarded updateClipboardAutoSync=$enabled to background engine');
+    } catch (e) {
+      debugPrint('[ForegroundService] updateClipboardAutoSync error: $e');
+    }
+  }
+
   /// Update notification directly from the UI (supplementary to background engine's updates)
   Future<void> updateConnectedDevices(List<String> deviceNames) async {
     if (!isSupported) return;
