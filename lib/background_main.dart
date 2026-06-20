@@ -93,10 +93,22 @@ class _BackgroundService {
     // even before UDP discovery finds the Mac/Windows device (2-5 s window).
     _ensureKnownDevicesFromHive();
 
-    // Start auto-sync if enabled
+    // Start auto-sync if enabled.
+    // IMPORTANT: Do NOT call _clipboardSyncService.startAutoSync() here.
+    // That method calls NativeClipboardListener.start() which tries to call
+    // _channel.setMethodCallHandler() on a static MethodChannel that uses the
+    // main engine's binaryMessenger — it does NOT reach the background engine's
+    // native clipboard channel.
+    //
+    // Instead, the background engine already has _clipboardChannel registered
+    // with the background engine's binaryMessenger (line above). Native Kotlin
+    // fires onClipboardChanged on that channel → _handleClipboardCall handles it
+    // and calls broadcastClipboard() directly.
+    //
+    // We DO need to set _autoSyncEnabled so that broadcastClipboard is triggered.
     final autoSync = settingsBox.get('clipboard_auto_sync', defaultValue: false) as bool;
     if (autoSync) {
-      _clipboardSyncService.startAutoSync();
+      _clipboardSyncService.enableAutoSync(); // just sets the flag, no channel ops
     }
 
     // Start persistent connection server
@@ -160,11 +172,11 @@ class _BackgroundService {
         debugPrint('[BackgroundService] updateClipboardAutoSync: enabled=$enabled');
         if (enabled && !_clipboardSyncService.isAutoSyncEnabled) {
           _ensureKnownDevicesFromHive(); // make sure devices are loaded before starting
-          _clipboardSyncService.startAutoSync();
-          debugPrint('[BackgroundService] Auto-sync started from settings change');
+          _clipboardSyncService.enableAutoSync(); // flag only — channel already set
+          debugPrint('[BackgroundService] Auto-sync enabled from settings change');
         } else if (!enabled && _clipboardSyncService.isAutoSyncEnabled) {
-          _clipboardSyncService.stopAutoSync();
-          debugPrint('[BackgroundService] Auto-sync stopped from settings change');
+          _clipboardSyncService.disableAutoSync(); // flag only
+          debugPrint('[BackgroundService] Auto-sync disabled from settings change');
         }
         return true;
 
@@ -212,13 +224,17 @@ class _BackgroundService {
   }
 
   Future<dynamic> _handleClipboardCall(MethodCall call) async {
-    // This handles clipboard methods from the native side for the background engine
+    // This is the correct path for the background engine.
+    // NativeClipboardListener._channel uses the static/main-engine messenger and
+    // CANNOT receive events in this isolate — instead, the background engine's
+    // _clipboardChannel (bound to the background engine's binaryMessenger) is the
+    // real channel that Kotlin fires onClipboardChanged on.
     switch (call.method) {
       case 'onClipboardChanged':
         final text = call.arguments as String? ?? '';
+        debugPrint('[BackgroundService] onClipboardChanged: ${text.length} chars, autoSync=${_clipboardSyncService.isAutoSyncEnabled}');
         if (text.isNotEmpty && _clipboardSyncService.isAutoSyncEnabled) {
-          // The native clipboard listener detected a change, broadcast it
-          _clipboardSyncService.onLocalClipboardChanged(text);
+          _clipboardSyncService.broadcastOrBuffer(text);
         }
         return null;
       default:

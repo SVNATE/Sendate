@@ -73,8 +73,7 @@ class ClipboardSyncService {
     _nativeListener.start();
     _nativeSubscription?.cancel();
     debugPrint('[ClipboardSync] Subscribing to clipboardChanges stream...');
-    _nativeSubscription = _nativeListener.clipboardChanges.listen(
-      (text) {
+    _nativeSubscription = _nativeListener.clipboardChanges.listen(      (text) {
         debugPrint('[ClipboardSync] clipboardChanges event received! text length=${text.length}');
         debugPrint('[ClipboardSync] _autoSyncEnabled=$_autoSyncEnabled, lastContent same=${text == _lastClipboardContent}');
         debugPrint('[ClipboardSync] connectedDevices=${_connectedDevices.length}, knownDevices=${_knownDevices.length}');
@@ -117,6 +116,42 @@ class ClipboardSyncService {
     _nativeSubscription = null;
     _nativeListener.stop();
     debugPrint('[ClipboardSync] Auto-sync stopped');
+  }
+
+  /// Enable auto-sync flag only — does NOT start the NativeClipboardListener.
+  /// Used by the Android background engine which has its own channel handler for
+  /// receiving clipboard events (NativeClipboardListener's static channel doesn't
+  /// work in the background isolate; the background engine uses _handleClipboardCall).
+  void enableAutoSync() {
+    _autoSyncEnabled = true;
+    debugPrint('[ClipboardSync] Auto-sync flag enabled (background engine mode)');
+  }
+
+  /// Disable auto-sync flag only (background engine counterpart to enableAutoSync).
+  void disableAutoSync() {
+    _autoSyncEnabled = false;
+    _pendingClipboardText = null;
+    debugPrint('[ClipboardSync] Auto-sync flag disabled (background engine mode)');
+  }
+
+  /// Send [text] immediately if devices are available, or buffer it for retry.
+  /// Called by the background engine's clipboard channel handler.
+  void broadcastOrBuffer(String text) {
+    if (text == _lastClipboardContent) {
+      debugPrint('[ClipboardSync] broadcastOrBuffer: skipping duplicate');
+      return;
+    }
+    _lastClipboardContent = text;
+
+    if (_connectedDevices.isNotEmpty || _knownDevices.isNotEmpty) {
+      _pendingClipboardText = null;
+      debugPrint('[ClipboardSync] broadcastOrBuffer: sending to '
+          '${_connectedDevices.length} connected + ${_knownDevices.length} known');
+      broadcastClipboard(text);
+    } else {
+      _pendingClipboardText = text;
+      debugPrint('[ClipboardSync] broadcastOrBuffer: no devices yet — buffered');
+    }
   }
 
   /// Register a connected device for clipboard sync
@@ -163,8 +198,12 @@ class ClipboardSyncService {
   void onLocalClipboardChanged(String text) {
     if (!_autoSyncEnabled) return;
     if (text == _lastClipboardContent) return;
-    if (_connectedDevices.isEmpty && _knownDevices.isEmpty) return;
     _lastClipboardContent = text;
+    if (_connectedDevices.isEmpty && _knownDevices.isEmpty) {
+      _pendingClipboardText = text;
+      debugPrint('[ClipboardSync] onLocalClipboardChanged: no devices — buffered');
+      return;
+    }
     broadcastClipboard(text);
   }
 
