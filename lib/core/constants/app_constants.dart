@@ -15,6 +15,7 @@ abstract class AppConstants {
   // transferPort + 2 = 53320 → clipboard TCP server (ClipboardSyncService)
   // transferPort + 3 = 53321 → notification sync TCP server
   static const int persistentConnectionPort = 53322; // Persistent TCP keep-alive
+  static const int messagingPort = 53323;            // Offline messaging TCP server
   static const Duration discoveryInterval = Duration(seconds: 1);
   static const Duration discoveryTimeout = Duration(seconds: 10);
 

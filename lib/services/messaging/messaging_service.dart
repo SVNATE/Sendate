@@ -135,14 +135,18 @@ class MessagingService {
     _messageController.add(message);
   }
 
-  /// Start message server (listens on a secondary port)
+  /// Start message server (listens on a dedicated port)
   Future<ServerSocket?> startMessageServer(int port) async {
+    // Use a fixed dedicated port to avoid collision with browserReceiverPort (53319).
+    // port + 1 = 53319 which is already taken by the HTTP browser receiver.
+    const messagingPort = 53323; // AppConstants.messagingPort
     try {
-      final server = await ServerSocket.bind(InternetAddress.anyIPv4, port + 1);
+      final server = await ServerSocket.bind(InternetAddress.anyIPv4, messagingPort);
       server.listen(_handleIncoming);
+      _log.debug('Message server listening on port $messagingPort');
       return server;
     } catch (e) {
-      _log.debug('Message server bind failed on port ${port + 1}: $e');
+      _log.debug('Message server bind failed on port $messagingPort: $e');
       return null;
     }
   }
@@ -169,8 +173,9 @@ class MessagingService {
   }
 
   Future<bool> _deliverMessage(Message message, String ip, int port) async {
+    const messagingPort = 53323; // AppConstants.messagingPort — fixed to avoid port 53319 collision
     try {
-      final socket = await Socket.connect(ip, port + 1, timeout: const Duration(seconds: 5));
+      final socket = await Socket.connect(ip, messagingPort, timeout: const Duration(seconds: 5));
       final payload = jsonEncode({
         'type': 'message',
         'data': message.toMap(),
@@ -180,7 +185,7 @@ class MessagingService {
       await socket.close();
       return true;
     } catch (e) {
-      _log.debug('Message delivery failed to $ip:${port + 1}: $e');
+      _log.debug('Message delivery failed to $ip:$messagingPort: $e');
       return false;
     }
   }
