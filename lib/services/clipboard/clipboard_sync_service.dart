@@ -259,10 +259,9 @@ class ClipboardSyncService {
     }
   }
 
-  /// Encrypt and send clipboard via direct TCP connection
+  /// Send clipboard via direct TCP connection (unencrypted, same-network LAN only)
   Future<bool> _sendViaTcp(String ip, int port, String text) async {
     try {
-      final key = await _getOrCreateSessionKey();
       final socket = await Socket.connect(ip, port + 2, timeout: const Duration(seconds: 5));
 
       final plainPayload = jsonEncode({
@@ -271,17 +270,14 @@ class ClipboardSyncService {
         'timestamp': DateTime.now().millisecondsSinceEpoch,
       });
 
-      // Encrypt
-      final encrypted = await _encryption.encryptChunk(
-        Uint8List.fromList(utf8.encode(plainPayload)),
-        key,
-      );
+      final payloadBytes = Uint8List.fromList(utf8.encode(plainPayload));
 
-      // Protocol: [4-byte length][1-byte flags (0x01 = encrypted)][encrypted data]
-      final totalLen = 1 + encrypted.length;
+      // Protocol: [4-byte length][1-byte flags (0x00 = unencrypted)][payload]
+      // Receiver's _handleIncoming already handles flag=0x00 as the legacy/plain path.
+      final totalLen = 1 + payloadBytes.length;
       socket.add(_intToBytes(totalLen));
-      socket.add([0x01]); // Encrypted flag
-      socket.add(encrypted);
+      socket.add([0x00]); // Unencrypted flag
+      socket.add(payloadBytes);
       await socket.flush();
       await socket.close();
       return true;

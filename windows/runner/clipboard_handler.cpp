@@ -37,7 +37,12 @@ void ClipboardHandler::Register(flutter::FlutterEngine* engine) {
              std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>>
                  result) {
         if (call.method_name() == "startMonitoring") {
-          // Already started via StartMonitoring() in OnCreate
+          // Restart monitoring if it was previously stopped (e.g. user toggled
+          // auto-sync off then on again). StartMonitoring() is idempotent when
+          // monitoring_ is already true, so safe to call unconditionally.
+          if (!monitoring_) {
+            StartMonitoring(nullptr);
+          }
           result->Success();
         } else if (call.method_name() == "stopMonitoring") {
           StopMonitoring();

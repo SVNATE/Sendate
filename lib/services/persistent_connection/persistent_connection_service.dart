@@ -38,7 +38,8 @@ class PersistentConnectionService {
 
   static const _heartbeatInterval = Duration(seconds: 5);
   static const _maxReconnectAttempts = 10;
-  static const _persistentPort = 53320; // Dedicated port for persistent connections
+  // Port 53319: distinct from transfer (53318), clipboard (53320), notification (53321)
+  static const _persistentPort = 53319; // Dedicated port for persistent connections
 
   Stream<Map<String, DeviceConnection>> get connectionStates => _stateController.stream;
   Map<String, DeviceConnection> get connections => Map.unmodifiable(_connections);

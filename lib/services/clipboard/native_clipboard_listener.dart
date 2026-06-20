@@ -14,12 +14,18 @@ class NativeClipboardListener {
   final _changeController = StreamController<String>.broadcast();
   String? _lastContent;
   Timer? _linuxTimer;
+  bool _isStarted = false;
 
   /// Stream of clipboard text changes (fires when user copies in ANY app)
   Stream<String> get clipboardChanges => _changeController.stream;
 
   /// Start listening for native clipboard changes
   void start() {
+    if (_isStarted) {
+      debugPrint('[NativeClipboard] start() already running, skipping duplicate call');
+      return;
+    }
+    _isStarted = true;
     debugPrint('[NativeClipboard] start() called on platform: ${Platform.operatingSystem}');
     if (Platform.isMacOS || Platform.isAndroid || Platform.isIOS) {
       // macOS/Android/iOS: native listener sends events via method channel
@@ -48,6 +54,7 @@ class NativeClipboardListener {
 
   /// Stop listening
   void stop() {
+    _isStarted = false;
     _linuxTimer?.cancel();
     _linuxTimer = null;
     if (Platform.isMacOS || Platform.isWindows) {
@@ -109,6 +116,7 @@ class NativeClipboardListener {
 
   /// Windows: fast poll using native getClipboard (no PowerShell overhead)
   void _startWindowsPolling() {
+    _linuxTimer?.cancel(); // Cancel any previous timer before creating a new one
     _linuxTimer = Timer.periodic(const Duration(milliseconds: 300), (_) async {
       try {
         final result = await _channel.invokeMethod<String>('getClipboard');
