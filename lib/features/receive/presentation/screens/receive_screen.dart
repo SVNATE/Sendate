@@ -375,11 +375,23 @@ class _BrowserReceiverToggleState
             ? _passwordController.text.trim()
             : null;
     await service.start(password: password);
+    if (!service.isRunning) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+                'Failed to start browser receiver — port may be in use'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+      return;
+    }
     final ip =
         await ref.read(networkServiceProvider).getLocalIp();
-    final urlBase = 'http://$ip:${service.port}';
+    final urlBase = 'http://\$ip:\${service.port}';
     final receiverUrl =
-        password != null ? '$urlBase?pwd=$password' : urlBase;
+        password != null ? '\$urlBase?pwd=\$password' : urlBase;
     ref.read(browserReceiverActiveProvider.notifier).state = true;
     ref.read(browserReceiverUrlProvider.notifier).state = receiverUrl;
     ref.read(browserReceiverPasswordProvider.notifier).state = password;

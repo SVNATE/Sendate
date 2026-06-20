@@ -9,9 +9,12 @@ abstract class AppConstants {
   static const int retryAttempts = 3;
 
   // Discovery
-  static const int discoveryPort = 53317;
-  static const int transferPort = 53318;
-  static const int browserReceiverPort = 53319;
+  static const int discoveryPort = 53317;       // UDP discovery broadcast
+  static const int transferPort = 53318;         // TCP file transfer
+  static const int browserReceiverPort = 53319;  // HTTP browser receiver
+  // transferPort + 2 = 53320 → clipboard TCP server (ClipboardSyncService)
+  // transferPort + 3 = 53321 → notification sync TCP server
+  static const int persistentConnectionPort = 53322; // Persistent TCP keep-alive
   static const Duration discoveryInterval = Duration(seconds: 1);
   static const Duration discoveryTimeout = Duration(seconds: 10);
 

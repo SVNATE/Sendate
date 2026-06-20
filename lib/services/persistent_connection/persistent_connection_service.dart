@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import '../../core/constants/app_constants.dart';
 import '../../core/utils/logger.dart';
 import '../../shared/models/device_model.dart';
 import '../clipboard/clipboard_sync_service.dart';
@@ -39,7 +40,7 @@ class PersistentConnectionService {
   static const _heartbeatInterval = Duration(seconds: 5);
   static const _maxReconnectAttempts = 10;
   // Port 53319: distinct from transfer (53318), clipboard (53320), notification (53321)
-  static const _persistentPort = 53319; // Dedicated port for persistent connections
+  static const _persistentPort = AppConstants.persistentConnectionPort;
 
   Stream<Map<String, DeviceConnection>> get connectionStates => _stateController.stream;
   Map<String, DeviceConnection> get connections => Map.unmodifiable(_connections);
