@@ -33,6 +33,8 @@ class SystemTrayService with TrayListener, WindowListener {
   bool _initialized = false;
   bool _launchOnLogin = false;
   List<String> _currentDevices = [];
+  bool _menuIsOpen = false;
+  bool _menuNeedsRebuild = false;
 
   bool get isInitialized => _initialized;
   List<String> get currentDevices => _currentDevices;
@@ -83,6 +85,11 @@ class SystemTrayService with TrayListener, WindowListener {
   Future<void> updateConnectedDevices(List<String> deviceNames) async {
     if (!_initialized) return;
     _currentDevices = deviceNames;
+    if (_menuIsOpen) {
+      // Don't rebuild while menu is visible — IDs would change and break clicks
+      _menuNeedsRebuild = true;
+      return;
+    }
     await _rebuildMenu();
   }
 
@@ -140,12 +147,12 @@ class SystemTrayService with TrayListener, WindowListener {
         items.add(MenuItem(
           key: 'clip_$name',
           label: '  Send Clipboard',
-          onClick: (_) => _handleMenuClick('clip_$name'),
+          onClick: (menuItem) => _handleMenuClick('clip_$name'),
         ));
         items.add(MenuItem(
           key: 'file_$name',
           label: '  Send Files',
-          onClick: (_) => _handleMenuClick('file_$name'),
+          onClick: (menuItem) => _handleMenuClick('file_$name'),
         ));
       }
     } else {
@@ -157,18 +164,18 @@ class SystemTrayService with TrayListener, WindowListener {
     items.add(MenuItem(
       key: 'launch_on_login',
       label: _launchOnLogin ? '✓ Launch on Login' : '  Launch on Login',
-      onClick: (_) => _handleMenuClick('launch_on_login'),
+      onClick: (menuItem) => _handleMenuClick('launch_on_login'),
     ));
     items.add(MenuItem(
       key: 'open',
       label: 'Open Sendate',
-      onClick: (_) => _handleMenuClick('open'),
+      onClick: (menuItem) => _handleMenuClick('open'),
     ));
     items.add(MenuItem.separator());
     items.add(MenuItem(
       key: 'quit',
       label: 'Quit',
-      onClick: (_) => _handleMenuClick('quit'),
+      onClick: (menuItem) => _handleMenuClick('quit'),
     ));
 
     await trayManager.setContextMenu(Menu(items: items));
@@ -201,10 +208,34 @@ class SystemTrayService with TrayListener, WindowListener {
   // --- TrayListener (Windows/Linux only) ---
 
   @override
-  void onTrayIconMouseDown() => trayManager.popUpContextMenu();
+  void onTrayIconMouseDown() {
+    // Use Future.delayed to break out of the method channel callback
+    // before calling popUpContextMenu. On Windows, TrackPopupMenu is blocking
+    // and would otherwise deadlock the channel handler.
+    _menuIsOpen = true;
+    Future.delayed(Duration.zero, () async {
+      await trayManager.popUpContextMenu();
+      // TrackPopupMenu has returned — menu is closed
+      _menuIsOpen = false;
+      if (_menuNeedsRebuild) {
+        _menuNeedsRebuild = false;
+        await _rebuildMenu();
+      }
+    });
+  }
 
   @override
-  void onTrayIconRightMouseDown() => trayManager.popUpContextMenu();
+  void onTrayIconRightMouseDown() {
+    _menuIsOpen = true;
+    Future.delayed(Duration.zero, () async {
+      await trayManager.popUpContextMenu();
+      _menuIsOpen = false;
+      if (_menuNeedsRebuild) {
+        _menuNeedsRebuild = false;
+        await _rebuildMenu();
+      }
+    });
+  }
 
   @override
   void onTrayMenuItemClick(MenuItem menuItem) {
@@ -223,6 +254,8 @@ class SystemTrayService with TrayListener, WindowListener {
     } else {
       await _disableLaunchOnLogin();
     }
+    // Menu is closed by now since user clicked an item, safe to rebuild
+    _menuIsOpen = false;
     await _rebuildMenu();
   }
 
@@ -285,6 +318,19 @@ class SystemTrayService with TrayListener, WindowListener {
       final home = Platform.environment['HOME'] ?? '';
       return File('$home/.config/autostart/sendate.desktop').existsSync();
     }
+    if (Platform.isWindows) {
+      try {
+        final result = await Process.run('reg', [
+          'query',
+          r'HKCU\Software\Microsoft\Windows\CurrentVersion\Run',
+          '/v',
+          'Sendate',
+        ]);
+        return result.exitCode == 0;
+      } catch (_) {
+        return false;
+      }
+    }
     return false;
   }
 
@@ -316,6 +362,17 @@ class SystemTrayService with TrayListener, WindowListener {
         if (!await dir.exists()) await dir.create(recursive: true);
         await File(_launchAgentPath).writeAsString(plist);
         debugPrint('[Tray] Launch on Login enabled: $_launchAgentPath');
+      } else if (Platform.isWindows) {
+        final execPath = Platform.resolvedExecutable;
+        await Process.run('reg', [
+          'add',
+          r'HKCU\Software\Microsoft\Windows\CurrentVersion\Run',
+          '/v', 'Sendate',
+          '/t', 'REG_SZ',
+          '/d', '"$execPath"',
+          '/f',
+        ]);
+        debugPrint('[Tray] Launch on Login enabled (Windows registry)');
       } else if (Platform.isLinux) {
         final home = Platform.environment['HOME'] ?? '';
         final appPath = Platform.resolvedExecutable;
@@ -343,6 +400,14 @@ X-GNOME-Autostart-enabled=true
         final file = File(_launchAgentPath);
         if (await file.exists()) await file.delete();
         debugPrint('[Tray] Launch on Login disabled');
+      } else if (Platform.isWindows) {
+        await Process.run('reg', [
+          'delete',
+          r'HKCU\Software\Microsoft\Windows\CurrentVersion\Run',
+          '/v', 'Sendate',
+          '/f',
+        ]);
+        debugPrint('[Tray] Launch on Login disabled (Windows registry)');
       } else if (Platform.isLinux) {
         final home = Platform.environment['HOME'] ?? '';
         final file = File('$home/.config/autostart/sendate.desktop');

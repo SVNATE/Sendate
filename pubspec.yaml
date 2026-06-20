@@ -47,7 +47,8 @@ dependencies:
   cupertino_icons: ^1.0.8
   flutter_animate: ^4.5.2
   gap: ^3.0.1
-  lucide_icons: ^0.257.0
+  lucide_icons:
+    path: packages/lucide_icons
   local_auth: ^2.3.0
 
   # Conversion

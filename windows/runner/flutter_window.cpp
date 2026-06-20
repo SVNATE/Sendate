@@ -25,7 +25,14 @@ bool FlutterWindow::OnCreate() {
     return false;
   }
   RegisterPlugins(flutter_controller_->engine());
+
+  // Register native clipboard handler for real-time monitoring
+  clipboard_handler_.Register(flutter_controller_->engine());
+
   SetChildContent(flutter_controller_->view()->GetNativeWindow());
+
+  // Start clipboard monitoring using the top-level window handle
+  clipboard_handler_.StartMonitoring(GetHandle());
 
   flutter_controller_->engine()->SetNextFrameCallback([&]() {
     this->Show();
@@ -51,6 +58,11 @@ LRESULT
 FlutterWindow::MessageHandler(HWND hwnd, UINT const message,
                               WPARAM const wparam,
                               LPARAM const lparam) noexcept {
+  // Handle clipboard update messages natively (works even when window is hidden)
+  if (clipboard_handler_.HandleWindowMessage(hwnd, message, wparam, lparam)) {
+    return 0;
+  }
+
   // Give Flutter, including plugins, an opportunity to handle window messages.
   if (flutter_controller_) {
     std::optional<LRESULT> result =

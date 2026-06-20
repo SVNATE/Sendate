@@ -26,12 +26,14 @@ class NativeClipboardListener {
       if (Platform.isMacOS) {
         _channel.invokeMethod('startMonitoring');
       }
+    } else if (Platform.isWindows) {
+      // Windows: native listener via Win32 AddClipboardFormatListener
+      // sends WM_CLIPBOARDUPDATE events through method channel
+      _channel.setMethodCallHandler(_handleNativeCallback);
+      _channel.invokeMethod('startMonitoring');
     } else if (Platform.isLinux) {
       // Linux: poll using xclip/xsel
       _startLinuxPolling();
-    } else if (Platform.isWindows) {
-      // Windows: poll using PowerShell (simple approach)
-      _startWindowsPolling();
     }
   }
 
@@ -39,7 +41,7 @@ class NativeClipboardListener {
   void stop() {
     _linuxTimer?.cancel();
     _linuxTimer = null;
-    if (Platform.isMacOS) {
+    if (Platform.isMacOS || Platform.isWindows) {
       _channel.invokeMethod('stopMonitoring');
     }
   }
@@ -101,25 +103,6 @@ class NativeClipboardListener {
         } catch (e2) {
           _log.debug('Linux clipboard polling failed: $e2');
         }
-      }
-    });
-  }
-
-  /// Windows: poll using PowerShell
-  void _startWindowsPolling() {
-    _linuxTimer = Timer.periodic(const Duration(milliseconds: 500), (_) async {
-      try {
-        final result = await Process.run(
-          'powershell',
-          ['-command', 'Get-Clipboard'],
-        );
-        final text = (result.stdout as String).trim();
-        if (text.isNotEmpty && text != _lastContent) {
-          _lastContent = text;
-          _changeController.add(text);
-        }
-      } catch (e) {
-        _log.debug('Windows clipboard polling failed: $e');
       }
     });
   }

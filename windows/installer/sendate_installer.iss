@@ -3,8 +3,8 @@
 
 #define MyAppName "Sendate"
 #define MyAppVersion "1.0.0"
-#define MyAppPublisher "Svnate"
-#define MyAppURL "https://sendate.app"
+#define MyAppPublisher "SVNATE"
+#define MyAppURL "https://sendate.svnate.com"
 #define MyAppExeName "sendate.exe"
 
 [Setup]
