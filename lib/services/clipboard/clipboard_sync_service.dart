@@ -68,10 +68,16 @@ class ClipboardSyncService {
     _nativeSubscription = _nativeListener.clipboardChanges.listen((text) {
       if (!_autoSyncEnabled) return;
       if (text == _lastClipboardContent) return;
-      if (_connectedDevices.isEmpty && _knownDevices.isEmpty) return;
 
       _lastClipboardContent = text;
-      broadcastClipboard(text);
+
+      // Only broadcast if we have targets; otherwise just track the content
+      // so we can send it when devices appear
+      if (_connectedDevices.isNotEmpty || _knownDevices.isNotEmpty) {
+        broadcastClipboard(text);
+      } else {
+        debugPrint('[ClipboardSync] Clipboard changed but no devices available yet');
+      }
     });
     debugPrint('[ClipboardSync] Auto-sync started. Connected: ${_connectedDevices.length}, Known: ${_knownDevices.length}');
   }
@@ -124,7 +130,12 @@ class ClipboardSyncService {
   /// Send clipboard content to a specific device
   Future<bool> sendClipboardTo(DeviceModel device, {String? content}) async {
     final text = content ?? await _nativeListener.getClipboard();
-    if (text.isEmpty) return false;
+    if (text.isEmpty) {
+      debugPrint('[ClipboardSync] sendClipboardTo: clipboard is empty, nothing to send');
+      return false;
+    }
+
+    debugPrint('[ClipboardSync] sendClipboardTo: ${device.name} (${device.ipAddress}), text length: ${text.length}');
 
     final targetSocket = _connectedDevices
         .where((d) => d.device.id == device.id)
@@ -132,13 +143,16 @@ class ClipboardSyncService {
         ?.socket;
 
     if (targetSocket != null) {
+      debugPrint('[ClipboardSync] Sending via persistent socket to ${device.name}');
       return _sendViaSocket(targetSocket, text);
     }
 
     if (device.ipAddress != null) {
+      debugPrint('[ClipboardSync] Sending via TCP fallback to ${device.name} at ${device.ipAddress}');
       return _sendViaTcp(device.ipAddress!, device.port ?? AppConstants.transferPort, text);
     }
 
+    debugPrint('[ClipboardSync] sendClipboardTo: no socket and no IP for ${device.name}');
     return false;
   }
 

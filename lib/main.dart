@@ -136,15 +136,46 @@ class _SendateAppState extends ConsumerState<SendateApp> {
       // Wire tray device-specific actions
       final tray = SystemTrayService.instance;
       tray.onSendClipboardToDevice = (deviceName) {
+        // Try multiple sources to find the device — Riverpod stream providers
+        // may not have active listeners when the app window is hidden in tray
         final devices = ref.read(allNearbyDevicesProvider);
-        final device = devices.where((d) => d.name == deviceName).firstOrNull;
+        var device = devices.where((d) => d.name == deviceName).firstOrNull;
+
+        // Fallback 1: check discovery service's internal state directly
+        if (device == null) {
+          final discoveryDevices = ref.read(discoveryServiceProvider).currentDevices;
+          device = discoveryDevices.where((d) => d.name == deviceName).firstOrNull;
+        }
+
+        // Fallback 2: check trusted devices
+        if (device == null) {
+          final trustedDevices = ref.read(trustedDevicesProvider);
+          device = trustedDevices.where((d) => d.name == deviceName).firstOrNull;
+        }
+
         if (device != null) {
+          debugPrint('[Main] Tray Send Clipboard to: ${device.name} (${device.ipAddress})');
           ref.read(clipboardSyncServiceProvider).sendClipboardTo(device);
+        } else {
+          debugPrint('[Main] Tray Send Clipboard: device "$deviceName" not found in any source');
         }
       };
       tray.onSendFilesToDevice = (deviceName) async {
         final devices = ref.read(allNearbyDevicesProvider);
-        final device = devices.where((d) => d.name == deviceName).firstOrNull;
+        var device = devices.where((d) => d.name == deviceName).firstOrNull;
+
+        // Fallback: discovery service internal state
+        if (device == null) {
+          final discoveryDevices = ref.read(discoveryServiceProvider).currentDevices;
+          device = discoveryDevices.where((d) => d.name == deviceName).firstOrNull;
+        }
+
+        // Fallback: trusted devices
+        if (device == null) {
+          final trustedDevices = ref.read(trustedDevicesProvider);
+          device = trustedDevices.where((d) => d.name == deviceName).firstOrNull;
+        }
+
         if (device != null) {
           try {
             final result = await FilePicker.platform.pickFiles(allowMultiple: true);
@@ -223,10 +254,11 @@ class _SendateAppState extends ConsumerState<SendateApp> {
 
       // Auto-start clipboard sync when devices are found
       ref.read(discoveryServiceProvider).devicesStream.listen((devices) {
+        final clipService = ref.read(clipboardSyncServiceProvider);
+        // Always update known devices so clipboard can reach them via TCP fallback
+        clipService.updateKnownDevices(devices);
+
         if (devices.isNotEmpty) {
-          final clipService = ref.read(clipboardSyncServiceProvider);
-          // Always update known devices so clipboard can reach them via TCP fallback
-          clipService.updateKnownDevices(devices);
           if (!clipService.isAutoSyncEnabled && ref.read(clipboardAutoSyncProvider)) {
             clipService.startAutoSync();
           }

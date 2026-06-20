@@ -62,6 +62,9 @@ class NativeClipboardListener {
   Future<String> getClipboard() async {
     try {
       final result = await _channel.invokeMethod<String>('getClipboard');
+      if (result == null || result.isEmpty) {
+        _log.debug('getClipboard returned empty from native channel');
+      }
       return result ?? '';
     } catch (e) {
       _log.debug('getClipboard via channel failed, using fallback: $e');

@@ -94,7 +94,9 @@ void ClipboardHandler::OnClipboardChanged() {
 }
 
 std::string ClipboardHandler::GetClipboardText() {
-  if (!OpenClipboard(hwnd_)) return "";
+  // Use nullptr to open clipboard without requiring a specific window to be active.
+  // This ensures clipboard access works even when our window is hidden (system tray).
+  if (!OpenClipboard(nullptr)) return "";
 
   std::string result;
   HANDLE hData = GetClipboardData(CF_UNICODETEXT);
@@ -123,7 +125,8 @@ bool ClipboardHandler::SetClipboardText(const std::string& text) {
       MultiByteToWideChar(CP_UTF8, 0, text.c_str(), -1, nullptr, 0);
   if (wide_size <= 0) return false;
 
-  if (!OpenClipboard(hwnd_)) return false;
+  // Use nullptr to open clipboard without requiring window focus
+  if (!OpenClipboard(nullptr)) return false;
 
   EmptyClipboard();
 
