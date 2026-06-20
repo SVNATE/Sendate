@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:gap/gap.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 
+import '../../../../core/utils/platform_capabilities.dart';
 import '../../../../shared/providers/clipboard_provider.dart';
 import '../../../../shared/providers/notification_sync_provider.dart';
 import '../../../../shared/providers/settings_provider.dart';
@@ -99,34 +100,39 @@ class SettingsScreen extends ConsumerWidget {
                       onChanged: (_) =>
                           ref.read(clipboardAutoSyncProvider.notifier).toggle(),
                     ),
-                    _SettingsToggleItem(
-                      icon: LucideIcons.bell,
-                      title: 'Notification Sync',
-                      subtitle: 'Mirror phone notifications to connected devices',
-                      value: ref.watch(notificationSyncEnabledProvider),
-                      onChanged: (_) =>
-                          ref.read(notificationSyncEnabledProvider.notifier).toggle(),
-                    ),
-                    _SettingsItem(
-                      icon: LucideIcons.bellRing,
-                      title: 'Notification Access',
-                      subtitle: 'Grant permission to read notifications',
-                      onTap: () => _openNotificationAccessSettings(ref),
-                    ),
+                    // Notification Sync only available on Android (requires NotificationListenerService)
+                    if (PlatformCapabilities.hasNotificationListener) ...[
+                      _SettingsToggleItem(
+                        icon: LucideIcons.bell,
+                        title: 'Notification Sync',
+                        subtitle: 'Mirror phone notifications to connected devices',
+                        value: ref.watch(notificationSyncEnabledProvider),
+                        onChanged: (_) =>
+                            ref.read(notificationSyncEnabledProvider.notifier).toggle(),
+                      ),
+                      _SettingsItem(
+                        icon: LucideIcons.bellRing,
+                        title: 'Notification Access',
+                        subtitle: 'Grant permission to read notifications',
+                        onTap: () => _openNotificationAccessSettings(ref),
+                      ),
+                    ],
                   ],
                 ),
                 const Gap(24),
                 _SettingsSection(
                   title: 'Security',
                   children: [
-                    _SettingsToggleItem(
-                      icon: LucideIcons.lock,
-                      title: 'App Lock',
-                      subtitle: 'Require authentication to open',
-                      value: ref.watch(appLockEnabledProvider),
-                      onChanged: (_) =>
-                          ref.read(appLockEnabledProvider.notifier).toggle(),
-                    ),
+                    // App Lock only on platforms with biometric support
+                    if (PlatformCapabilities.hasBiometrics)
+                      _SettingsToggleItem(
+                        icon: LucideIcons.lock,
+                        title: 'App Lock',
+                        subtitle: 'Require authentication to open',
+                        value: ref.watch(appLockEnabledProvider),
+                        onChanged: (_) =>
+                            ref.read(appLockEnabledProvider.notifier).toggle(),
+                      ),
                     _SettingsItem(
                       icon: LucideIcons.shield,
                       title: 'Encryption',

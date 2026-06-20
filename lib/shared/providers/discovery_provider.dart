@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -123,6 +124,9 @@ class DiscoveryController {
 
   /// Start Bluetooth scanning
   Future<void> startBluetoothScan() async {
+    // Bluetooth only available on mobile platforms
+    if (!Platform.isAndroid && !Platform.isIOS) return;
+
     // Request permissions first (Android 12+)
     await _requestBluetoothPermissions();
 
@@ -141,6 +145,8 @@ class DiscoveryController {
   }
 
   Future<void> _requestBluetoothPermissions() async {
+    // Permissions only needed on Android/iOS
+    if (!Platform.isAndroid && !Platform.isIOS) return;
     try {
       await [
         Permission.bluetoothScan,
@@ -168,6 +174,9 @@ class DiscoveryController {
 
   /// Start WiFi Direct peer discovery
   Future<void> startWifiDirectDiscovery() async {
+    // WiFi Direct is Android-only
+    if (!Platform.isAndroid) return;
+
     final wfdService = _ref.read(wifiDirectServiceProvider);
     final available = await wfdService.isAvailable();
     if (!available) return;

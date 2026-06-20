@@ -170,11 +170,11 @@ class FolderSyncService {
     await transferService!.sendFile(filePath: filePath, target: target);
   }
 
-  /// Compute file hash for diff detection
+  /// Compute file hash for diff detection (SHA-256)
   Future<String> fileHash(String path) async {
     final file = File(path);
     final bytes = await file.readAsBytes();
-    return crypto_pkg.md5.convert(bytes).toString();
+    return crypto_pkg.sha256.convert(bytes).toString();
   }
 
   void dispose() => stopAll();

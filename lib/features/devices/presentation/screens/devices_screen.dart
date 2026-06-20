@@ -6,6 +6,7 @@ import 'package:gap/gap.dart';
 import 'package:go_router/go_router.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 
+import '../../../../core/utils/platform_capabilities.dart';
 import '../../../../core/utils/platform_detector.dart';
 import '../../../../shared/models/device_model.dart';
 import '../../../../shared/providers/device_provider.dart';
@@ -46,12 +47,14 @@ class _DevicesScreenState extends ConsumerState<DevicesScreen> {
                 icon: Icon(LucideIcons.helpCircle),
                 tooltip: 'Help',
               ),
-              IconButton(
-                onPressed: () =>
-                    ref.read(discoveryControllerProvider).startBluetoothScan(),
-                icon: Icon(LucideIcons.bluetooth),
-                tooltip: 'Bluetooth scan',
-              ),
+              // Bluetooth scan only on mobile platforms
+              if (PlatformCapabilities.hasBluetooth)
+                IconButton(
+                  onPressed: () =>
+                      ref.read(discoveryControllerProvider).startBluetoothScan(),
+                  icon: Icon(LucideIcons.bluetooth),
+                  tooltip: 'Bluetooth scan',
+                ),
               // QR Scan only available on mobile (camera required)
               if (Platform.isAndroid || Platform.isIOS)
                 FutureBuilder<bool>(
