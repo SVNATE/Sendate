@@ -146,6 +146,7 @@ class MainActivity : FlutterFragmentActivity() {
         // --- Native Clipboard Listener (for the main UI engine) ---
         clipboardChannel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CLIPBOARD_CHANNEL)
         val clipboardManager = getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
+        this.clipboardManager = clipboardManager // Store for onNewIntent clipboard pre-read
 
         clipboardManager.addPrimaryClipChangedListener {
             try {
@@ -368,6 +369,7 @@ class MainActivity : FlutterFragmentActivity() {
     }
 
     private var pendingNotificationAction: String? = null
+    private var clipboardManager: ClipboardManager? = null
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
@@ -377,7 +379,22 @@ class MainActivity : FlutterFragmentActivity() {
         if (action != null) {
             Log.d(TAG, "onNewIntent with action: $action")
             if (serviceChannel != null) {
-                serviceChannel?.invokeMethod("onNotificationAction", action)
+                if (action == "send_clipboard") {
+                    // Android 10+ requires window focus to read clipboard via ClipboardManager.
+                    // The user just tapped the notification (active interaction), so the system
+                    // grants clipboard access here even before onWindowFocusChanged fires.
+                    // Read eagerly and pass the text to Dart to avoid a focus race condition.
+                    val clipText = try {
+                        clipboardManager?.primaryClip?.getItemAt(0)?.text?.toString() ?: ""
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Clipboard read in onNewIntent failed: ${e.message}")
+                        ""
+                    }
+                    Log.d(TAG, "onNewIntent send_clipboard: clipText.length=${clipText.length}")
+                    serviceChannel?.invokeMethod("onSendClipboardFromNotification", clipText)
+                } else {
+                    serviceChannel?.invokeMethod("onNotificationAction", action)
+                }
             } else {
                 // Flutter engine not ready yet — store for later retrieval via getPendingAction
                 pendingNotificationAction = action

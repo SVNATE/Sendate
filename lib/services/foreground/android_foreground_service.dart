@@ -17,6 +17,10 @@ class AndroidForegroundService {
 
   /// Callback when "Send Clipboard" is tapped (forwarded from service)
   VoidCallback? _onSendClipboardAction;
+
+  /// Clipboard text pre-read in native onNewIntent (avoids Android 10+ focus race)
+  String? _pendingClipboardText;
+
   set onSendClipboardAction(VoidCallback? cb) {
     _onSendClipboardAction = cb;
     // Replay any queued action
@@ -123,6 +127,14 @@ class AndroidForegroundService {
     }
   }
 
+  /// Pop the clipboard text pre-read in Kotlin's onNewIntent.
+  /// Returns null and clears after first read.
+  String? popPendingClipboardText() {
+    final text = _pendingClipboardText;
+    _pendingClipboardText = null;
+    return text;
+  }
+
   /// Handle callbacks from native side
   Future<dynamic> _handleMethodCall(MethodCall call) async {
     switch (call.method) {
@@ -130,6 +142,14 @@ class AndroidForegroundService {
         final action = call.arguments as String? ?? '';
         debugPrint('[ForegroundService] Notification action received: $action');
         _executeAction(action);
+        break;
+      case 'onSendClipboardFromNotification':
+        // Native onNewIntent pre-read the clipboard to avoid Android 10+ focus race.
+        // Store the text so the callback can use it without calling getClipboard() again.
+        final clipText = call.arguments as String? ?? '';
+        debugPrint('[ForegroundService] onSendClipboardFromNotification: ${clipText.length} chars');
+        _pendingClipboardText = clipText.isNotEmpty ? clipText : null;
+        _executeAction('send_clipboard');
         break;
       case 'onSendClipboard':
         debugPrint('[ForegroundService] Send Clipboard from notification');

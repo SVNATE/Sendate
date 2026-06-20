@@ -206,22 +206,43 @@ class _SendateAppState extends ConsumerState<SendateApp> {
       if (AndroidForegroundService.isSupported) {
         final fgService = AndroidForegroundService.instance;
         fgService.onSendClipboardAction = () {
-          final clipService = ref.read(clipboardSyncServiceProvider);
-          final devices = ref.read(allNearbyDevicesProvider);
-          if (devices.isNotEmpty) {
-            // Send clipboard to all connected devices
-            for (final device in devices) {
-              clipService.sendClipboardTo(device);
-            }
-          } else {
-            // Fallback: try trusted devices from storage
-            final trustedDevices = ref.read(trustedDevicesProvider);
-            for (final device in trustedDevices) {
-              if (device.ipAddress != null) {
-                clipService.sendClipboardTo(device);
+          // Use clipboard text pre-read in Kotlin's onNewIntent (avoids Android 10+ focus race).
+          // If not available (e.g. checkPendingAction path), sendClipboardToAll reads it itself.
+          final preReadText = fgService.popPendingClipboardText();
+
+          Future(() async {
+            try {
+              final clipService = ref.read(clipboardSyncServiceProvider);
+
+              // Merge ALL device sources so clipboard service can reach any known device
+              final nearbyDevices = ref.read(allNearbyDevicesProvider);
+              final trustedDevices = ref.read(trustedDevicesProvider)
+                  .where((d) => d.ipAddress != null)
+                  .toList();
+              final devicesToTry = <String, DeviceModel>{};
+              for (final d in [...nearbyDevices, ...trustedDevices]) {
+                devicesToTry[d.id] = d;
               }
+              if (devicesToTry.isNotEmpty) {
+                clipService.updateKnownDevices(devicesToTry.values.toList());
+              }
+
+              String? sent;
+              if (preReadText != null && preReadText.isNotEmpty) {
+                // Use the pre-read clipboard text — skip re-reading to avoid focus race
+                await clipService.broadcastClipboard(preReadText);
+                sent = preReadText;
+                debugPrint('[Main] Notification Send Clipboard (pre-read): ${sent.length} chars');
+              } else {
+                // Fallback: sendClipboardToAll reads clipboard itself
+                sent = await clipService.sendClipboardToAll();
+                debugPrint('[Main] Notification Send Clipboard: '
+                    '${sent != null ? "✓ (${sent.length} chars)" : "✗ empty or no devices"}');
+              }
+            } catch (e) {
+              debugPrint('[Main] Notification Send Clipboard error: $e');
             }
-          }
+          });
         };
         fgService.onSendFilesAction = () async {
           // Open file picker directly (no navigation needed)
