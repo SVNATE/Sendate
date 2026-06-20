@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive/hive.dart';
 
 import '../../core/constants/app_constants.dart';
+import '../../services/notification/notification_service.dart';
 import '../../services/transfer/transfer_service.dart';
 import '../models/device_model.dart';
 import '../models/transfer_model.dart';
@@ -26,12 +27,33 @@ final transferServiceProvider = Provider<TransferService>((ref) {
   }
 
   // Record completed/failed/cancelled transfers to history
+  // and drive status-bar progress notifications
   service.transferStream.listen((transfer) {
     if (transfer.state == TransferState.completed ||
         transfer.state == TransferState.failed ||
         transfer.state == TransferState.cancelled) {
       ref.read(transferHistoryProvider.notifier).addRecord(transfer);
       ref.read(activeTransfersProvider.notifier).removeTransfer(transfer.id);
+
+      // Dismiss the ongoing progress notification
+      NotificationService.cancelTransferProgress(transfer.id);
+
+      // Show completion / failure notification
+      if (transfer.direction == TransferDirection.sent) {
+        if (transfer.state == TransferState.completed) {
+          NotificationService.showTransferComplete(
+            fileName: transfer.fileName,
+            deviceName: transfer.deviceName,
+            isSend: true,
+          );
+        } else if (transfer.state == TransferState.failed) {
+          NotificationService.showTransferFailed(
+            fileName: transfer.fileName,
+            error: transfer.errorMessage ?? 'Unknown error',
+          );
+        }
+      }
+      // Received-side completion is handled in main.dart's onFileReceived
     } else {
       // Upsert active transfer
       final active = ref.read(activeTransfersProvider);
@@ -41,6 +63,20 @@ final transferServiceProvider = Provider<TransferService>((ref) {
             .updateTransfer(transfer.id, (_) => transfer);
       } else {
         ref.read(activeTransfersProvider.notifier).addTransfer(transfer);
+      }
+
+      // Show / update status-bar progress notification while sending
+      if (transfer.direction == TransferDirection.sent &&
+          transfer.state == TransferState.sending) {
+        NotificationService.showTransferSending(
+          transferId: transfer.id,
+          fileName: transfer.fileName,
+          deviceName: transfer.deviceName,
+          progressPercent: (transfer.progress * 100).round(),
+          bytesTransferred: transfer.bytesTransferred,
+          totalBytes: transfer.fileSize,
+          speedBps: transfer.speed ?? 0,
+        );
       }
     }
   });

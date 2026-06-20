@@ -313,7 +313,13 @@ class _SendateAppState extends ConsumerState<SendateApp> {
           fileName: transfer.fileName,
           deviceName: transfer.deviceName,
           fileSize: transfer.fileSize,
+          transferId: transfer.id,
         );
+      };
+
+      // Wire cancel-from-notification → cancel the transfer in the service
+      NotificationService.onCancelTransferRequested = (transferId) {
+        ref.read(transferControllerProvider).cancel(transferId);
       };
 
       service.startServer();
