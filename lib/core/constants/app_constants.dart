@@ -26,6 +26,7 @@ abstract class AppConstants {
   static const String resumeBox = 'resume_metadata';
   static const String favoritesBox = 'favorites';
   static const String blockedBox = 'blocked_devices';
+  static const String savedSelectionsBox = 'saved_selections';
 
   // Limits
   static const int maxMemoryUsageMB = 250;

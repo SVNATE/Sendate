@@ -38,6 +38,7 @@ void main() async {
   await Hive.openBox(AppConstants.resumeBox);
   await Hive.openBox(AppConstants.blockedBox);
   await Hive.openBox(AppConstants.favoritesBox);
+  await Hive.openBox(AppConstants.savedSelectionsBox);
 
   // Initialize device identity
   final identityService = DeviceIdentityService();
