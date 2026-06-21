@@ -9,6 +9,7 @@ import '../../features/history/presentation/screens/history_screen.dart';
 import '../../features/messaging/presentation/screens/chat_screen.dart';
 import '../../features/receive/presentation/screens/receive_screen.dart';
 import '../../features/send/presentation/screens/send_screen.dart';
+import '../../features/send/presentation/screens/transfer_progress_screen.dart';
 import '../../features/settings/presentation/screens/settings_screen.dart';
 import '../../shared/models/device_model.dart';
 import '../shell/adaptive_shell.dart';
@@ -69,6 +70,12 @@ final appRouter = GoRouter(
       path: '/chat',
       builder: (context, state) => ChatScreen(
         device: state.extra as DeviceModel,
+      ),
+    ),
+    GoRoute(
+      path: '/transfer-progress',
+      builder: (context, state) => TransferProgressScreen(
+        args: state.extra as TransferProgressArgs,
       ),
     ),
   ],

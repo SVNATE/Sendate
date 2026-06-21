@@ -2,24 +2,19 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:gap/gap.dart';
+import 'package:go_router/go_router.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 
 import '../../../../shared/models/device_model.dart';
 import '../../../../shared/providers/discovery_provider.dart';
+import '../../../../shared/providers/send_screen_providers.dart';
 import '../../../../shared/providers/transfer_service_provider.dart';
 import '../../../../shared/widgets/device_avatar.dart';
 import '../../../../shared/widgets/help_guide_sheet.dart';
 import '../widgets/clipboard_send_dialog.dart';
-
-/// Selected files to send
-final selectedFilesProvider =
-    StateProvider<List<PlatformFile>>((ref) => []);
-
-/// Broadcast mode — allow selecting multiple target devices.
-final broadcastModeProvider = StateProvider<bool>((ref) => false);
-
-/// Device IDs selected for broadcast send.
-final selectedDeviceIdsProvider = StateProvider<Set<String>>((ref) => {});
+import '../widgets/save_selection_dialog.dart';
+import '../widgets/saved_selections_sheet.dart';
+import 'transfer_progress_screen.dart';
 
 class SendScreen extends ConsumerStatefulWidget {
   const SendScreen({super.key});
@@ -55,6 +50,12 @@ class _SendScreenState extends ConsumerState<SendScreen> {
             floating: true,
             title: const Text('Send'),
             actions: [
+              // Load saved selection
+              IconButton(
+                onPressed: () => _showSavedSelections(context),
+                icon: const Icon(LucideIcons.bookmark),
+                tooltip: 'Saved Selections',
+              ),
               // Broadcast mode toggle
               IconButton(
                 onPressed: () {
@@ -96,6 +97,7 @@ class _SendScreenState extends ConsumerState<SendScreen> {
                     onClear: () => ref
                         .read(selectedFilesProvider.notifier)
                         .state = [],
+                    onSave: () => _saveSelection(context, selectedFiles),
                   ),
                 ],
                 const Gap(28),
@@ -224,6 +226,27 @@ class _SendScreenState extends ConsumerState<SendScreen> {
     );
   }
 
+  /// Open the Save Selection dialog to name and persist the current file list.
+  Future<void> _saveSelection(
+      BuildContext context, List<PlatformFile> files) async {
+    final paths =
+        files.where((f) => f.path != null).map((f) => f.path!).toList();
+    if (paths.isEmpty) return;
+    await showDialog<bool>(
+      context: context,
+      builder: (_) => SaveSelectionDialog(filePaths: paths),
+    );
+  }
+
+  /// Open the Saved Selections bottom sheet so the user can load a preset.
+  void _showSavedSelections(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      builder: (_) => const SavedSelectionsSheet(),
+    );
+  }
+
   void _sendToDevice(DeviceModel device) {
     final files = ref.read(selectedFilesProvider);
     if (files.isEmpty) {
@@ -275,18 +298,20 @@ class _SendScreenState extends ConsumerState<SendScreen> {
       return;
     }
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Sending ${filePaths.length} file(s) to ${device.name}...'),
-        duration: const Duration(seconds: 2),
-      ),
-    );
-
-    // Clear selection
+    // Clear selection before navigating
     ref.read(selectedFilesProvider.notifier).state = [];
 
-    // Send all files
+    // Start transfer in background (non-awaited)
     controller.sendFiles(filePaths: filePaths, target: device);
+
+    // Navigate to the dedicated progress screen
+    context.push(
+      '/transfer-progress',
+      extra: TransferProgressArgs(
+        deviceIds: [device.id],
+        deviceName: device.name,
+      ),
+    );
   }
 
   /// Broadcast: send the same files to all selected devices in parallel.
@@ -306,21 +331,26 @@ class _SendScreenState extends ConsumerState<SendScreen> {
     if (filePaths.isEmpty) return;
 
     final controller = ref.read(transferControllerProvider);
+    final deviceIds = targets.map((t) => t.id).toList();
+    final deviceNames = targets.map((t) => t.name).join(', ');
 
     for (final target in targets) {
       controller.sendFiles(filePaths: filePaths, target: target);
     }
 
-    // Reset state
+    // Reset state before navigating
     ref.read(selectedFilesProvider.notifier).state = [];
     ref.read(selectedDeviceIdsProvider.notifier).state = {};
     ref.read(broadcastModeProvider.notifier).state = false;
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-            'Broadcasting ${filePaths.length} file(s) to ${targets.length} device(s)'),
-        duration: const Duration(seconds: 2),
+    // Navigate to progress screen showing all broadcast targets
+    context.push(
+      '/transfer-progress',
+      extra: TransferProgressArgs(
+        deviceIds: deviceIds,
+        deviceName: targets.length == 1
+            ? targets.first.name
+            : '${targets.length} devices',
       ),
     );
   }
@@ -442,10 +472,12 @@ class _ContentTypeGrid extends StatelessWidget {
 class _SelectedFilesPreview extends StatelessWidget {
   final List<PlatformFile> files;
   final VoidCallback onClear;
+  final VoidCallback onSave;
 
   const _SelectedFilesPreview({
     required this.files,
     required this.onClear,
+    required this.onSave,
   });
 
   String _formatSize(int bytes) {
@@ -460,7 +492,7 @@ class _SelectedFilesPreview extends StatelessWidget {
     final totalSize = files.fold<int>(0, (sum, f) => sum + (f.size));
 
     return Container(
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
         color: colorScheme.primaryContainer.withValues(alpha: 0.2),
         borderRadius: BorderRadius.circular(12),
@@ -482,6 +514,21 @@ class _SelectedFilesPreview extends StatelessWidget {
               ),
             ),
           ),
+          // Save selection button
+          Tooltip(
+            message: 'Save selection',
+            child: InkWell(
+              onTap: onSave,
+              borderRadius: BorderRadius.circular(8),
+              child: Padding(
+                padding: const EdgeInsets.all(4),
+                child: Icon(LucideIcons.bookmarkPlus,
+                    size: 18, color: colorScheme.primary),
+              ),
+            ),
+          ),
+          const Gap(4),
+          // Clear button
           GestureDetector(
             onTap: onClear,
             child: Icon(LucideIcons.x, size: 18, color: colorScheme.primary),
