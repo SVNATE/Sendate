@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:hive/hive.dart';
 import 'package:path_provider/path_provider.dart';
 
@@ -190,6 +191,7 @@ class BrowserReceiverService {
       debugPrint('[BrowserReceiver] Unauthorized upload attempt from $clientIp');
       request.response.statusCode = 401;
       request.response.headers.add('WWW-Authenticate', 'Bearer');
+      request.response.headers.contentType = ContentType.json;
       request.response.write(jsonEncode({
         'success': false,
         'error': 'Unauthorized. Invalid or missing authentication.',
@@ -202,7 +204,8 @@ class BrowserReceiverService {
       final contentType = request.headers.contentType;
       if (contentType == null || contentType.mimeType != 'multipart/form-data') {
         request.response.statusCode = 400;
-        request.response.write('Expected multipart/form-data');
+        request.response.headers.contentType = ContentType.json;
+        request.response.write(jsonEncode({'success': false, 'error': 'Expected multipart/form-data'}));
         await request.response.close();
         return;
       }
@@ -210,36 +213,70 @@ class BrowserReceiverService {
       final boundary = contentType.parameters['boundary'];
       if (boundary == null) {
         request.response.statusCode = 400;
-        request.response.write('No boundary');
+        request.response.headers.contentType = ContentType.json;
+        request.response.write(jsonEncode({'success': false, 'error': 'No boundary'}));
         await request.response.close();
         return;
       }
 
+      // Body size limit: 500MB to prevent OOM on large uploads
+      const maxBodyBytes = 500 * 1024 * 1024;
+      final bodyBytes = <int>[];
+      await for (final chunk in request) {
+        bodyBytes.addAll(chunk);
+        if (bodyBytes.length > maxBodyBytes) {
+          request.response.statusCode = 413;
+          request.response.headers.contentType = ContentType.json;
+          request.response.write(jsonEncode({'success': false, 'error': 'Upload too large (max 500MB)'}));
+          await request.response.close();
+          return;
+        }
+      }
+
       final savePath = await _getSaveDir();
       final transformer = MimeMultipartTransformer(boundary);
-      final parts = await transformer.bind(request).toList();
+
+      // Feed buffered bytes as a single-element stream
+      final parts = await transformer.bind(Stream.value(bodyBytes)).toList();
 
       final savedFiles = <String>[];
 
       for (final part in parts) {
         final disposition = part.headers['content-disposition'] ?? '';
-        final fileNameMatch = RegExp(r'filename="([^"]+)"').firstMatch(disposition);
+        final fileNameMatch = RegExp(r'filename="([^"]*)"').firstMatch(disposition);
         if (fileNameMatch == null) continue;
 
         final rawFileName = fileNameMatch.group(1)!;
+        if (rawFileName.isEmpty) continue;
+
         final fileName = _sanitizeFileName(rawFileName);
         if (fileName == null) {
           debugPrint('[BrowserReceiver] Rejected unsafe filename: $rawFileName');
           continue;
         }
 
-        final filePath = '$savePath/$fileName';
-        final file = File(filePath);
+        if (part.data.isEmpty) {
+          debugPrint('[BrowserReceiver] Skipped empty file: $fileName');
+          continue;
+        }
+
+        // Resolve collision: append (1), (2) ... if file already exists
+        final resolvedPath = _resolveFilePath(savePath, fileName);
+        final file = File(resolvedPath);
         await file.writeAsBytes(part.data);
-        savedFiles.add(fileName);
+        final savedName = resolvedPath.split('/').last;
+        savedFiles.add(savedName);
+        debugPrint('[BrowserReceiver] Saved file: $resolvedPath (${part.data.length} bytes)');
       }
 
       debugPrint('[BrowserReceiver] Received ${savedFiles.length} file(s) from $clientIp');
+
+      if (savedFiles.isNotEmpty) {
+        // Save to transfer history
+        await _saveToHistory(savedFiles, clientIp);
+        // Show system notification
+        _showNotification(savedFiles);
+      }
 
       request.response
         ..statusCode = 200
@@ -252,26 +289,128 @@ class BrowserReceiverService {
       await request.response.close();
     } catch (e) {
       debugPrint('[BrowserReceiver] Upload error from $clientIp: $e');
-      request.response.statusCode = 500;
-      request.response.write(jsonEncode({'success': false, 'error': 'Server error'}));
-      await request.response.close();
+      try {
+        request.response.statusCode = 500;
+        request.response.headers.contentType = ContentType.json;
+        request.response.write(jsonEncode({'success': false, 'error': 'Server error'}));
+        await request.response.close();
+      } catch (_) {}
+    }
+  }
+
+  /// Resolve a collision-free file path by appending (1), (2) etc.
+  String _resolveFilePath(String dir, String fileName) {
+    var candidate = '$dir/$fileName';
+    if (!File(candidate).existsSync()) return candidate;
+
+    final dot = fileName.lastIndexOf('.');
+    final base = dot > 0 ? fileName.substring(0, dot) : fileName;
+    final ext  = dot > 0 ? fileName.substring(dot) : '';
+    var counter = 1;
+    while (File(candidate).existsSync()) {
+      candidate = '$dir/$base ($counter)$ext';
+      counter++;
+    }
+    return candidate;
+  }
+
+  Future<void> _saveToHistory(List<String> fileNames, String senderIp) async {
+    try {
+      final box = Hive.box(AppConstants.historyBox);
+      final ts = DateTime.now();
+      for (final name in fileNames) {
+        box.put('browser_${ts.millisecondsSinceEpoch}_$name', {
+          'id': 'browser_${ts.millisecondsSinceEpoch}',
+          'type': 'receive',
+          'fileName': name,
+          'deviceName': 'Browser ($senderIp)',
+          'direction': 'receive',
+          'status': 'completed',
+          'timestamp': ts.toIso8601String(),
+        });
+      }
+    } catch (e) {
+      debugPrint('[BrowserReceiver] Failed to save history: $e');
+    }
+  }
+
+  void _showNotification(List<String> fileNames) {
+    try {
+      final plugin = FlutterLocalNotificationsPlugin();
+      final title = fileNames.length == 1
+          ? 'File received: ${fileNames.first}'
+          : '${fileNames.length} files received via Browser';
+      const androidDetails = AndroidNotificationDetails(
+        'browser_receiver',
+        'Browser Receiver',
+        channelDescription: 'Notifications for files received via the browser upload page',
+        importance: Importance.high,
+        priority: Priority.high,
+      );
+      const darwinDetails = DarwinNotificationDetails();
+      plugin.show(
+        DateTime.now().millisecondsSinceEpoch & 0xFFFF,
+        'Sendate',
+        title,
+        const NotificationDetails(android: androidDetails, macOS: darwinDetails),
+      );
+    } catch (e) {
+      debugPrint('[BrowserReceiver] Notification error: $e');
     }
   }
 
   Future<String> _getSaveDir() async {
     try {
+      // 1. Check user-configured save location first
       final settingsBox = Hive.box(AppConstants.settingsBox);
-      final saveLoc = settingsBox.get('save_location', defaultValue: 'Downloads') as String;
-      if (saveLoc.startsWith('/') && await Directory(saveLoc).exists()) return saveLoc;
-      if (Platform.isAndroid) {
-        final dir = Directory('/storage/emulated/0/Download');
-        if (await dir.exists()) return dir.path;
+      final saveLoc = settingsBox.get('save_location', defaultValue: '') as String;
+      if (saveLoc.isNotEmpty && saveLoc.startsWith('/')) {
+        final d = Directory(saveLoc);
+        if (await d.exists()) return d.path;
       }
     } catch (e) {
-      debugPrint('[BrowserReceiver] Error resolving save dir: $e');
+      debugPrint('[BrowserReceiver] Error reading save_location setting: $e');
     }
+
+    // 2. Platform default Downloads folder
+    try {
+      if (Platform.isAndroid) {
+        // Primary external storage Downloads
+        for (final p in [
+          '/storage/emulated/0/Download',
+          '/storage/emulated/0/Downloads',
+        ]) {
+          final d = Directory(p);
+          if (await d.exists()) return d.path;
+        }
+      } else if (Platform.isMacOS || Platform.isLinux) {
+        final home = Platform.environment['HOME'];
+        if (home != null) {
+          final d = Directory('$home/Downloads');
+          if (await d.exists()) return d.path;
+          // Create it if missing
+          await d.create(recursive: true);
+          return d.path;
+        }
+      } else if (Platform.isWindows) {
+        final userProfile = Platform.environment['USERPROFILE'];
+        if (userProfile != null) {
+          final d = Directory('$userProfile\\Downloads');
+          if (await d.exists()) return d.path;
+          await d.create(recursive: true);
+          return d.path;
+        }
+      }
+    } catch (e) {
+      debugPrint('[BrowserReceiver] Error resolving Downloads dir: $e');
+    }
+
+    // 3. Last resort: app documents directory
     final appDir = await getApplicationDocumentsDirectory();
-    return appDir.path;
+    final sendate = Directory('${appDir.path}/Sendate/Downloads');
+    await sendate.create(recursive: true);
+    debugPrint('[BrowserReceiver] Using fallback save dir: ${sendate.path}');
+    return sendate.path;
   }
 
   String _getUploadHtml(bool authRequired) => '''
