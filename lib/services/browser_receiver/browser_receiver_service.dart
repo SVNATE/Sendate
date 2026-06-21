@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -219,69 +220,100 @@ class BrowserReceiverService {
         return;
       }
 
-      // Body size limit: 500MB to prevent OOM on large uploads
-      const maxBodyBytes = 500 * 1024 * 1024;
-      final bodyBytes = <int>[];
-      await for (final chunk in request) {
-        bodyBytes.addAll(chunk);
-        if (bodyBytes.length > maxBodyBytes) {
-          request.response.statusCode = 413;
-          request.response.headers.contentType = ContentType.json;
-          request.response.write(jsonEncode({'success': false, 'error': 'Upload too large (max 500MB)'}));
-          await request.response.close();
-          return;
-        }
-      }
+      // BUG-05 FIX: stream the body directly through the multipart parser
+      // instead of buffering the entire body in RAM first.  This reduces peak
+      // heap usage from ~3× file size to roughly the parser's window size.
+      //
+      // We still need a soft size gate per-file; track total bytes written.
+      const maxTotalBytes = 500 * 1024 * 1024; // 500 MB aggregate cap
+      int totalBytesWritten = 0;
+      bool tooLarge = false;
 
       final savePath = await _getSaveDir();
-      final transformer = MimeMultipartTransformer(boundary);
-
-      // Feed buffered bytes as a single-element stream
-      final parts = await transformer.bind(Stream.value(bodyBytes)).toList();
-
       final savedFiles = <String>[];
 
-      for (final part in parts) {
+      // StreamingMimeMultipartParser processes the request stream chunk-by-chunk.
+      final parser = StreamingMimeMultipartParser(boundary);
+
+      await for (final part in parser.parse(request)) {
         final disposition = part.headers['content-disposition'] ?? '';
-        final fileNameMatch = RegExp(r'filename="([^"]*)"').firstMatch(disposition);
-        if (fileNameMatch == null) continue;
+        final fileNameMatch =
+            RegExp(r'filename="([^"]*)"').firstMatch(disposition);
+        if (fileNameMatch == null) {
+          // Drain the part data without saving (non-file field)
+          await part.drain<void>();
+          continue;
+        }
 
         final rawFileName = fileNameMatch.group(1)!;
-        if (rawFileName.isEmpty) continue;
+        if (rawFileName.isEmpty) {
+          await part.drain<void>();
+          continue;
+        }
 
         final fileName = _sanitizeFileName(rawFileName);
         if (fileName == null) {
           debugPrint('[BrowserReceiver] Rejected unsafe filename: $rawFileName');
+          await part.drain<void>();
           continue;
         }
 
-        if (part.data.isEmpty) {
-          debugPrint('[BrowserReceiver] Skipped empty file: $fileName');
-          continue;
-        }
-
-        // Resolve collision: append (1), (2) ... if file already exists
         final resolvedPath = _resolveFilePath(savePath, fileName);
-        final file = File(resolvedPath);
-        await file.writeAsBytes(part.data);
-        final savedName = resolvedPath.split('/').last;
+        final sink = File(resolvedPath).openWrite();
+        int fileBytes = 0;
+
+        await for (final chunk in part) {
+          if (tooLarge) break;
+          sink.add(chunk);
+          fileBytes += chunk.length;
+          totalBytesWritten += chunk.length;
+          if (totalBytesWritten > maxTotalBytes) {
+            tooLarge = true;
+            break;
+          }
+        }
+        await sink.flush();
+        await sink.close();
+
+        if (tooLarge) {
+          // Remove the partially written file
+          try { await File(resolvedPath).delete(); } catch (_) {}
+          break;
+        }
+
+        if (fileBytes == 0) {
+          debugPrint('[BrowserReceiver] Skipped empty file: $fileName');
+          try { await File(resolvedPath).delete(); } catch (_) {}
+          continue;
+        }
+
+        final savedName = resolvedPath.split(Platform.pathSeparator).last;
         savedFiles.add(savedName);
-        debugPrint('[BrowserReceiver] Saved file: $resolvedPath (${part.data.length} bytes)');
+        debugPrint('[BrowserReceiver] Saved: $resolvedPath ($fileBytes bytes)');
+      }
+
+      if (tooLarge) {
+        request.response.statusCode = 413;
+        request.response.headers.contentType = ContentType.json;
+        request.response.write(jsonEncode({
+          'success': false,
+          'error': 'Upload too large (max 500 MB aggregate)',
+        }));
+        await request.response.close();
+        return;
       }
 
       debugPrint('[BrowserReceiver] Received ${savedFiles.length} file(s) from $clientIp');
 
       if (savedFiles.isNotEmpty) {
-        // Save to transfer history
-        await _saveToHistory(savedFiles, clientIp);
-        // Show system notification via central NotificationService
+        await _saveToHistory(savedFiles, clientIp, totalBytesWritten);
         final displayName = savedFiles.length == 1
             ? savedFiles.first
             : '${savedFiles.length} files';
         NotificationService.showFileReceived(
           fileName: displayName,
           senderName: 'Browser ($clientIp)',
-          fileSize: bodyBytes.length,
+          fileSize: totalBytesWritten,
         );
       }
 
@@ -321,19 +353,34 @@ class BrowserReceiverService {
     return candidate;
   }
 
-  Future<void> _saveToHistory(List<String> fileNames, String senderIp) async {
+  // BUG-12 FIX: use the same Hive schema that TransferHistoryNotifier reads,
+  // so browser-received files show correct fields (direction, state, fileSize,
+  // deviceId, deviceName, mimeType, startedAt, etc.).
+  Future<void> _saveToHistory(
+      List<String> fileNames, String senderIp, int totalBytes) async {
     try {
       final box = Hive.box(AppConstants.historyBox);
       final ts = DateTime.now();
+      final perFileSize =
+          fileNames.isNotEmpty ? (totalBytes / fileNames.length).round() : 0;
       for (final name in fileNames) {
-        box.put('browser_${ts.millisecondsSinceEpoch}_$name', {
-          'id': 'browser_${ts.millisecondsSinceEpoch}',
-          'type': 'receive',
+        final id = 'browser_${ts.millisecondsSinceEpoch}_$name';
+        box.put(id, {
+          'id': id,
           'fileName': name,
+          'filePath': '',
+          'fileSize': perFileSize,
+          'mimeType': 'application/octet-stream',
+          'deviceId': 'browser-$senderIp',
           'deviceName': 'Browser ($senderIp)',
-          'direction': 'receive',
-          'status': 'completed',
-          'timestamp': ts.toIso8601String(),
+          'direction': 'received', // matches TransferHistoryNotifier logic
+          'state': 'completed',
+          'progress': 1.0,
+          'bytesTransferred': perFileSize,
+          'speed': null,
+          'startedAt': ts.toIso8601String(),
+          'completedAt': ts.toIso8601String(),
+          'duration': null,
         });
       }
     } catch (e) {
@@ -466,67 +513,149 @@ xhr.send(fd)}catch(e){status.textContent='Error: '+e;status.style.display='block
   Future<void> dispose() async => await stop();
 }
 
-/// Minimal multipart parser
-class MimeMultipartTransformer {
+// ---------------------------------------------------------------------------
+// BUG-05 FIX: Streaming multipart parser — never buffers the full body.
+// Each MimePartStream yields decoded chunks on demand; files are piped
+// directly from the HTTP socket to the file sink with constant heap usage.
+// ---------------------------------------------------------------------------
+
+/// A single multipart part exposed as a [Stream<List<int>>] of body bytes.
+class MimePartStream extends Stream<List<int>> {
+  final Map<String, String> headers;
+  final _ctrl = StreamController<List<int>>();
+
+  MimePartStream(this.headers);
+
+  void addChunk(List<int> chunk) => _ctrl.add(chunk);
+  Future<void> close() => _ctrl.close();
+
+  @override
+  StreamSubscription<List<int>> listen(
+    void Function(List<int>)? onData, {
+    Function? onError,
+    void Function()? onDone,
+    bool? cancelOnError,
+  }) =>
+      _ctrl.stream.listen(onData,
+          onError: onError, onDone: onDone, cancelOnError: cancelOnError);
+}
+
+class StreamingMimeMultipartParser {
   final String boundary;
-  MimeMultipartTransformer(this.boundary);
 
-  Stream<MimeMultipart> bind(Stream<List<int>> stream) async* {
-    final bytes = <int>[];
-    await for (final chunk in stream) { bytes.addAll(chunk); }
+  StreamingMimeMultipartParser(this.boundary);
 
-    final boundaryBytes = utf8.encode('--$boundary');
-    var i = _indexOf(bytes, boundaryBytes, 0);
-    if (i < 0) return;
+  /// Parse [source] into a stream of [MimePartStream].
+  /// Each yielded part must be fully consumed (via `await for` or `.drain()`)
+  /// before the next part is produced — single-pass, low-memory.
+  Stream<MimePartStream> parse(Stream<List<int>> source) async* {
+    final delim = utf8.encode('\r\n--$boundary');
+    final firstDelim = utf8.encode('--$boundary');
 
-    while (true) {
-      i += boundaryBytes.length;
-      if (i + 2 <= bytes.length && bytes[i] == 45 && bytes[i + 1] == 45) break;
-      if (i < bytes.length && bytes[i] == 13) i++;
-      if (i < bytes.length && bytes[i] == 10) i++;
+    // Accumulator for bytes not yet committed to a part
+    final buf = <int>[];
+    MimePartStream? currentPart;
+    bool headersRead = false;
+    bool foundFirst = false;
 
-      final headersEnd = _indexOf(bytes, utf8.encode('\r\n\r\n'), i);
-      if (headersEnd < 0) break;
-
-      final headersStr = utf8.decode(bytes.sublist(i, headersEnd));
-      final headers = <String, String>{};
-      for (final line in headersStr.split('\r\n')) {
-        final colon = line.indexOf(':');
-        if (colon > 0) {
-          headers[line.substring(0, colon).trim().toLowerCase()] =
-              line.substring(colon + 1).trim();
-        }
+    Future<void> flush(List<int> data) async {
+      if (currentPart != null) {
+        currentPart.addChunk(data);
       }
-
-      final dataStart = headersEnd + 4;
-      final nextBoundary = _indexOf(bytes, boundaryBytes, dataStart);
-      if (nextBoundary < 0) break;
-
-      var dataEnd = nextBoundary - 2;
-      if (dataEnd < dataStart) dataEnd = dataStart;
-
-      final data = bytes.sublist(dataStart, dataEnd);
-      yield MimeMultipart(headers, data);
-      i = nextBoundary;
     }
+
+    await for (final chunk in source) {
+      buf.addAll(chunk);
+
+      while (true) {
+        if (!foundFirst) {
+          // Look for the first boundary
+          final idx = _indexOf(buf, firstDelim, 0);
+          if (idx < 0) break;
+          buf.removeRange(0, idx + firstDelim.length);
+          // Skip \r\n or check for -- (end)
+          if (buf.length < 2) break;
+          if (buf[0] == 45 && buf[1] == 45) {
+            // Final boundary
+            break;
+          }
+          if (buf[0] == 13) buf.removeAt(0);
+          if (buf.isNotEmpty && buf[0] == 10) buf.removeAt(0);
+          foundFirst = true;
+          headersRead = false;
+        }
+
+        if (!headersRead) {
+          // Read MIME headers until \r\n\r\n
+          final headerEnd = _indexOf(buf, utf8.encode('\r\n\r\n'), 0);
+          if (headerEnd < 0) break;
+
+          final headerStr = utf8.decode(buf.sublist(0, headerEnd));
+          buf.removeRange(0, headerEnd + 4);
+
+          final headers = <String, String>{};
+          for (final line in headerStr.split('\r\n')) {
+            final colon = line.indexOf(':');
+            if (colon > 0) {
+              headers[line.substring(0, colon).trim().toLowerCase()] =
+                  line.substring(colon + 1).trim();
+            }
+          }
+
+          // Close previous part before yielding the new one
+          if (currentPart != null) await currentPart.close();
+
+          currentPart = MimePartStream(headers);
+          yield currentPart;
+          headersRead = true;
+        }
+
+        // Feed body data until we hit the next boundary
+        final boundaryIdx = _indexOf(buf, delim, 0);
+        if (boundaryIdx < 0) {
+          // No boundary yet — safe to flush all but (delim.length - 1) bytes
+          final safeLen = buf.length - (delim.length - 1);
+          if (safeLen > 0) {
+            await flush(buf.sublist(0, safeLen));
+            buf.removeRange(0, safeLen);
+          }
+          break;
+        }
+
+        // Found boundary — flush up to boundary, then reset for next part
+        if (boundaryIdx > 0) {
+          await flush(buf.sublist(0, boundaryIdx));
+        }
+        buf.removeRange(0, boundaryIdx + delim.length);
+
+        // Check for final boundary (--)
+        if (buf.length >= 2 && buf[0] == 45 && buf[1] == 45) {
+          if (currentPart != null) await currentPart.close();
+          currentPart = null;
+          return;
+        }
+
+        // Skip \r\n after boundary
+        if (buf.isNotEmpty && buf[0] == 13) buf.removeAt(0);
+        if (buf.isNotEmpty && buf[0] == 10) buf.removeAt(0);
+
+        headersRead = false;
+      }
+    }
+
+    if (currentPart != null) await currentPart.close();
   }
 
   int _indexOf(List<int> haystack, List<int> needle, int start) {
+    outer:
     for (var i = start; i <= haystack.length - needle.length; i++) {
-      var found = true;
       for (var j = 0; j < needle.length; j++) {
-        if (haystack[i + j] != needle[j]) { found = false; break; }
+        if (haystack[i + j] != needle[j]) continue outer;
       }
-      if (found) return i;
+      return i;
     }
     return -1;
   }
-}
-
-class MimeMultipart {
-  final Map<String, String> headers;
-  final List<int> data;
-  MimeMultipart(this.headers, this.data);
 }
 
 class _RateLimit {

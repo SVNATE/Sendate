@@ -47,31 +47,53 @@ class TransferHistoryNotifier extends StateNotifier<List<TransferModel>> {
   void _loadFromHive() {
     try {
       final records = _box.values.toList();
-      state = records.map((item) {
-        final map = Map<String, dynamic>.from(item as Map);
-        return TransferModel(
-          id: map['id'] as String,
-          fileName: map['fileName'] as String,
-          filePath: map['filePath'] as String? ?? '',
-          fileSize: map['fileSize'] as int? ?? 0,
-          mimeType: map['mimeType'] as String? ?? '',
-          deviceId: map['deviceId'] as String? ?? '',
-          deviceName: map['deviceName'] as String? ?? 'Unknown',
-          direction: map['direction'] == 'sent'
+      final loaded = <TransferModel>[];
+      for (final item in records) {
+        try {
+          final map = Map<String, dynamic>.from(item as Map);
+
+          // BUG-12 FIX: tolerate both schemas:
+          //   • WiFi/BT transfer schema  : 'direction' = 'sent'|'received', 'state' key
+          //   • Old browser schema       : 'direction' = 'receive', 'status' key (legacy)
+          // Normalise direction: accept 'sent', 'received', 'receive' → enum
+          final rawDir = map['direction'] as String? ?? 'received';
+          final direction = rawDir == 'sent'
               ? TransferDirection.sent
-              : TransferDirection.received,
-          state: _parseState(map['state'] as String?),
-          progress: (map['progress'] as num?)?.toDouble() ?? 1.0,
-          bytesTransferred: map['bytesTransferred'] as int? ?? 0,
-          speed: map['speed'] as int?,
-          startedAt: DateTime.tryParse(map['startedAt'] as String? ?? '') ??
-              DateTime.now(),
-          completedAt: map['completedAt'] != null
-              ? DateTime.tryParse(map['completedAt'] as String)
-              : null,
-          duration: map['duration'] as int?,
-        );
-      }).toList();
+              : TransferDirection.received;
+
+          // Normalise state: accept 'state' or legacy 'status' key
+          final rawState =
+              (map['state'] ?? map['status']) as String?;
+
+          loaded.add(TransferModel(
+            id: (map['id'] as String?) ?? '',
+            fileName: (map['fileName'] as String?) ?? 'unknown',
+            filePath: (map['filePath'] as String?) ?? '',
+            fileSize: (map['fileSize'] as int?) ?? 0,
+            mimeType: (map['mimeType'] as String?) ?? '',
+            deviceId: (map['deviceId'] as String?) ?? '',
+            deviceName: (map['deviceName'] as String?) ?? 'Unknown',
+            direction: direction,
+            state: _parseState(rawState),
+            progress: (map['progress'] as num?)?.toDouble() ?? 1.0,
+            bytesTransferred: (map['bytesTransferred'] as int?) ?? 0,
+            speed: map['speed'] as int?,
+            startedAt:
+                DateTime.tryParse(map['startedAt'] as String? ??
+                        map['timestamp'] as String? ??
+                        '') ??
+                    DateTime.now(),
+            completedAt: map['completedAt'] != null
+                ? DateTime.tryParse(map['completedAt'] as String)
+                : null,
+            duration: map['duration'] as int?,
+          ));
+        } catch (e) {
+          // Skip individual corrupt records; don't wipe the whole list.
+          debugPrint('[TransferProvider] Skipped corrupt history record: $e');
+        }
+      }
+      state = loaded;
     } catch (e) {
       debugPrint('[TransferProvider] Failed to load transfer history: $e');
       state = [];
