@@ -13,10 +13,13 @@ class NotificationService {
   static const _incomingRequestChannelId = 'sendate_incoming_request';
 
   static const connectionNotifId = 1;
-  static const transferNotifId = 100;
+  static const transferNotifId = 100;   // send-batch summary (always replaces previous)
+  // Receive notifications: 101–199 (timestamp-bucketed, stack)
   static const clipboardNotifId = 200;
   // Progress notifications: 300 + abs(transferId.hashCode) % 400  → 300–699
   // Incoming request notifications: 700 + abs(transferId.hashCode) % 200 → 700–899
+
+  static int _receiveNotifId() => 101 + DateTime.now().millisecondsSinceEpoch % 99;
 
   /// Pending incoming-file approvals keyed by transferId.
   /// Completed when the user taps Accept or Reject in the notification.
@@ -292,41 +295,70 @@ class NotificationService {
     await _plugin.cancel(_requestNotifId(transferId));
   }
 
-  /// Show transfer complete notification
-  static Future<void> showTransferComplete({
-    required String fileName,
+  /// Show a single summary notification after a send batch finishes.
+  /// Shows one notification regardless of how many files were in the batch.
+  static Future<void> showSendBatchComplete({
     required String deviceName,
-    required bool isSend,
+    required List<String> sentFiles,
+    required List<String> failedFiles,
   }) async {
+    final success = sentFiles.length;
+    final failed = failedFiles.length;
+    final total = success + failed;
+    if (total == 0) return;
+
+    final String title;
+    final String body;
+    if (failed == 0) {
+      title = total == 1 ? 'Sent to $deviceName' : 'Sent $total files to $deviceName';
+      body = sentFiles.join(', ');
+    } else if (success == 0) {
+      title = total == 1 ? 'Failed to send' : 'Send failed';
+      body = total == 1 ? failedFiles.first : '$total files could not be sent to $deviceName';
+    } else {
+      title = '$success of $total sent to $deviceName';
+      body = '$failed file${failed > 1 ? 's' : ''} failed';
+    }
+
     await _plugin.show(
-      transferNotifId + DateTime.now().millisecondsSinceEpoch % 100,
-      isSend ? 'Sent to $deviceName' : 'Received from $deviceName',
-      fileName,
-      NotificationDetails(
+      transferNotifId, // fixed ID → replaces previous summary
+      title,
+      body,
+      const NotificationDetails(
         android: AndroidNotificationDetails(
           _transferChannelId,
           'File Transfers',
-          actions: [
-            if (!isSend) const AndroidNotificationAction('open', 'Open', showsUserInterface: true),
-          ],
+          importance: Importance.high,
+          priority: Priority.high,
         ),
-        iOS: const DarwinNotificationDetails(),
+        iOS: DarwinNotificationDetails(),
+        macOS: DarwinNotificationDetails(),
       ),
     );
   }
 
-  /// Show transfer failed notification
-  static Future<void> showTransferFailed({
+  /// Show a receive-side notification when a file arrives (TCP or browser).
+  static Future<void> showFileReceived({
     required String fileName,
-    required String error,
+    required String senderName,
+    required int fileSize,
   }) async {
     await _plugin.show(
-      transferNotifId + DateTime.now().millisecondsSinceEpoch % 100,
-      'Transfer failed',
-      '$fileName: $error',
-      const NotificationDetails(
-        android: AndroidNotificationDetails(_transferChannelId, 'File Transfers'),
-        iOS: DarwinNotificationDetails(),
+      _receiveNotifId(),
+      'Received from $senderName',
+      '$fileName • ${_formatBytes(fileSize)}',
+      NotificationDetails(
+        android: AndroidNotificationDetails(
+          _transferChannelId,
+          'File Transfers',
+          importance: Importance.high,
+          priority: Priority.high,
+          actions: [
+            const AndroidNotificationAction('open', 'Open', showsUserInterface: true),
+          ],
+        ),
+        iOS: const DarwinNotificationDetails(),
+        macOS: const DarwinNotificationDetails(),
       ),
     );
   }

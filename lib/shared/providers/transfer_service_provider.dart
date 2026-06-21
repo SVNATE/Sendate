@@ -26,6 +26,15 @@ final transferServiceProvider = Provider<TransferService>((ref) {
     debugPrint('[TransferServiceProvider] Failed to load device identity: $e');
   }
 
+  // Wire receive-side notification — fires as soon as a file is fully saved.
+  service.onFileReceived = (transfer, savedPath) {
+    NotificationService.showFileReceived(
+      fileName: transfer.fileName,
+      senderName: transfer.deviceName,
+      fileSize: transfer.bytesTransferred,
+    );
+  };
+
   // Record completed/failed/cancelled transfers to history
   // and drive status-bar progress notifications
   service.transferStream.listen((transfer) {
@@ -37,23 +46,7 @@ final transferServiceProvider = Provider<TransferService>((ref) {
 
       // Dismiss the ongoing progress notification
       NotificationService.cancelTransferProgress(transfer.id);
-
-      // Show completion / failure notification
-      if (transfer.direction == TransferDirection.sent) {
-        if (transfer.state == TransferState.completed) {
-          NotificationService.showTransferComplete(
-            fileName: transfer.fileName,
-            deviceName: transfer.deviceName,
-            isSend: true,
-          );
-        } else if (transfer.state == TransferState.failed) {
-          NotificationService.showTransferFailed(
-            fileName: transfer.fileName,
-            error: transfer.errorMessage ?? 'Unknown error',
-          );
-        }
-      }
-      // Received-side completion is handled in main.dart's onFileReceived
+      // Batch send summary is shown by TransferController.sendFiles() after all files finish.
     } else {
       // Upsert active transfer
       final active = ref.read(activeTransfersProvider);
@@ -112,15 +105,32 @@ class TransferController {
     return _service.sendFile(filePath: filePath, target: target);
   }
 
-  /// Enqueue multiple files for sequential sending
-  void sendFiles({
+  /// Send multiple files sequentially and show ONE summary notification when done.
+  Future<void> sendFiles({
     required List<String> filePaths,
     required DeviceModel target,
     TransferPriority priority = TransferPriority.normal,
-  }) {
-    // Sync auto-convert setting before sending
+  }) async {
     _service.autoConvertEnabled = _ref.read(autoConvertProvider);
-    _service.enqueueFiles(filePaths: filePaths, target: target, priority: priority);
+    final sentFiles = <String>[];
+    final failedFiles = <String>[];
+    for (final path in filePaths) {
+      try {
+        final result = await _service.sendFile(filePath: path, target: target);
+        if (result.state == TransferState.completed) {
+          sentFiles.add(result.fileName);
+        } else {
+          failedFiles.add(result.fileName);
+        }
+      } catch (e) {
+        failedFiles.add(path.split('/').last);
+      }
+    }
+    await NotificationService.showSendBatchComplete(
+      deviceName: target.name,
+      sentFiles: sentFiles,
+      failedFiles: failedFiles,
+    );
   }
 
   /// Schedule files to be sent at a specific time

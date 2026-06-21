@@ -2,11 +2,11 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
-import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:hive/hive.dart';
 import 'package:path_provider/path_provider.dart';
 
 import '../../core/constants/app_constants.dart';
+import '../notification/notification_service.dart';
 
 /// Local HTTP server that serves an upload page.
 /// Any device with a browser on the local network can send files to this device.
@@ -274,8 +274,15 @@ class BrowserReceiverService {
       if (savedFiles.isNotEmpty) {
         // Save to transfer history
         await _saveToHistory(savedFiles, clientIp);
-        // Show system notification
-        _showNotification(savedFiles);
+        // Show system notification via central NotificationService
+        final displayName = savedFiles.length == 1
+            ? savedFiles.first
+            : '${savedFiles.length} files';
+        NotificationService.showFileReceived(
+          fileName: displayName,
+          senderName: 'Browser ($clientIp)',
+          fileSize: bodyBytes.length,
+        );
       }
 
       request.response
@@ -331,31 +338,6 @@ class BrowserReceiverService {
       }
     } catch (e) {
       debugPrint('[BrowserReceiver] Failed to save history: $e');
-    }
-  }
-
-  void _showNotification(List<String> fileNames) {
-    try {
-      final plugin = FlutterLocalNotificationsPlugin();
-      final title = fileNames.length == 1
-          ? 'File received: ${fileNames.first}'
-          : '${fileNames.length} files received via Browser';
-      const androidDetails = AndroidNotificationDetails(
-        'browser_receiver',
-        'Browser Receiver',
-        channelDescription: 'Notifications for files received via the browser upload page',
-        importance: Importance.high,
-        priority: Priority.high,
-      );
-      const darwinDetails = DarwinNotificationDetails();
-      plugin.show(
-        DateTime.now().millisecondsSinceEpoch & 0xFFFF,
-        'Sendate',
-        title,
-        const NotificationDetails(android: androidDetails, macOS: darwinDetails),
-      );
-    } catch (e) {
-      debugPrint('[BrowserReceiver] Notification error: $e');
     }
   }
 
