@@ -11,6 +11,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.net.wifi.p2p.WifiP2pConfig
 import android.net.wifi.p2p.WifiP2pManager
 import android.os.Build
@@ -22,6 +23,8 @@ import androidx.core.content.ContextCompat
 import io.flutter.embedding.android.FlutterFragmentActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
+import java.io.File
+import java.io.FileOutputStream
 import java.io.IOException
 import java.util.UUID
 
@@ -37,6 +40,7 @@ class MainActivity : FlutterFragmentActivity() {
     private val CLIPBOARD_CHANNEL = "com.svnate.sendate/native_clipboard"
     private val SERVICE_CHANNEL = "com.svnate.sendate/foreground_service"
     private val NOTIFICATION_LISTENER_CHANNEL = "com.svnate.sendate/notification_listener"
+    private val OPEN_FILES_CHANNEL = "com.svnate.sendate/open_files"
 
     private val BT_SPP_UUID: UUID =
         UUID.fromString("00001101-0000-1000-8000-00805F9B34FB") // Standard SPP UUID
@@ -54,6 +58,7 @@ class MainActivity : FlutterFragmentActivity() {
 
     private var wifiP2pManager: WifiP2pManager? = null
     private var wifiP2pChannel: WifiP2pManager.Channel? = null
+    private var openFilesChannel: MethodChannel? = null
 
     private val btReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
@@ -373,9 +378,22 @@ class MainActivity : FlutterFragmentActivity() {
 
         // Auto-start the foreground service
         requestNotificationPermissionAndStartService()
+
+        // Register the open-files channel (used by share_handler and direct VIEW intents)
+        openFilesChannel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, OPEN_FILES_CHANNEL)
+
+        // Flush any files that arrived before the engine was ready
+        pendingSharedFiles?.let { files ->
+            pendingSharedFiles = null
+            openFilesChannel?.invokeMethod("openFiles", files)
+        }
+
+        // Handle share / VIEW intent that launched the app cold
+        handleIncomingIntent(intent)
     }
 
     private var pendingNotificationAction: String? = null
+    private var pendingSharedFiles: List<String>? = null
     private var clipboardManager: ClipboardManager? = null
 
     override fun onNewIntent(intent: Intent) {
@@ -387,10 +405,6 @@ class MainActivity : FlutterFragmentActivity() {
             Log.d(TAG, "onNewIntent with action: $action")
             if (serviceChannel != null) {
                 if (action == "send_clipboard") {
-                    // Android 10+ requires window focus to read clipboard via ClipboardManager.
-                    // The user just tapped the notification (active interaction), so the system
-                    // grants clipboard access here even before onWindowFocusChanged fires.
-                    // Read eagerly and pass the text to Dart to avoid a focus race condition.
                     val clipText = try {
                         clipboardManager?.primaryClip?.getItemAt(0)?.text?.toString() ?: ""
                     } catch (e: Exception) {
@@ -403,10 +417,80 @@ class MainActivity : FlutterFragmentActivity() {
                     serviceChannel?.invokeMethod("onNotificationAction", action)
                 }
             } else {
-                // Flutter engine not ready yet — store for later retrieval via getPendingAction
                 pendingNotificationAction = action
             }
             intent.removeExtra("notification_action")
+        }
+
+        // Handle share / VIEW intent delivered while app is already running
+        handleIncomingIntent(intent)
+    }
+
+    /// Resolve a share/VIEW intent to a list of real file paths and forward to Flutter.
+    private fun handleIncomingIntent(intent: Intent?) {
+        if (intent == null) return
+        val intentAction = intent.action ?: return
+
+        val uris = mutableListOf<Uri>()
+
+        when (intentAction) {
+            Intent.ACTION_SEND -> {
+                val uri = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    intent.getParcelableExtra(Intent.EXTRA_STREAM, Uri::class.java)
+                } else {
+                    @Suppress("DEPRECATION")
+                    intent.getParcelableExtra<Uri>(Intent.EXTRA_STREAM)
+                }
+                if (uri != null) uris.add(uri)
+            }
+            Intent.ACTION_SEND_MULTIPLE -> {
+                val list = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    intent.getParcelableArrayListExtra(Intent.EXTRA_STREAM, Uri::class.java)
+                } else {
+                    @Suppress("DEPRECATION")
+                    intent.getParcelableArrayListExtra<Uri>(Intent.EXTRA_STREAM)
+                }
+                if (list != null) uris.addAll(list)
+            }
+            Intent.ACTION_VIEW -> {
+                val uri = intent.data
+                if (uri != null) uris.add(uri)
+            }
+            else -> return
+        }
+
+        if (uris.isEmpty()) return
+
+        val paths = uris.mapNotNull { uri -> resolveUriToPath(uri) }
+        if (paths.isEmpty()) return
+
+        Log.d(TAG, "handleIncomingIntent: forwarding ${paths.size} file(s) to Flutter")
+        if (openFilesChannel != null) {
+            openFilesChannel?.invokeMethod("openFiles", paths)
+        } else {
+            // Flutter engine not ready yet — store for later
+            pendingSharedFiles = paths
+        }
+    }
+
+    /// Copy a content:// URI to a temp file and return its absolute path.
+    private fun resolveUriToPath(uri: Uri): String? {
+        return try {
+            val cursor = contentResolver.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)
+            val fileName = cursor?.use {
+                if (it.moveToFirst()) it.getString(0) else null
+            } ?: "shared_file_${System.currentTimeMillis()}"
+
+            val tempDir = File(cacheDir, "sendate_shared").apply { mkdirs() }
+            val tempFile = File(tempDir, fileName)
+
+            contentResolver.openInputStream(uri)?.use { input ->
+                FileOutputStream(tempFile).use { output -> input.copyTo(output) }
+            }
+            tempFile.absolutePath
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to resolve URI $uri: ${e.message}")
+            null
         }
     }
 

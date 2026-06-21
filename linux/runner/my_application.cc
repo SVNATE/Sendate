@@ -5,18 +5,64 @@
 #include <gdk/gdkx.h>
 #endif
 
+#include <gio/gio.h>
+#include <string.h>
+
 #include "flutter/generated_plugin_registrant.h"
 
 struct _MyApplication {
   GtkApplication parent_instance;
   char** dart_entrypoint_arguments;
+  FlView* fl_view;  // kept so we can send openFiles after first frame
 };
 
 G_DEFINE_TYPE(MyApplication, my_application, GTK_TYPE_APPLICATION)
 
+// ─── Open-files helper ────────────────────────────────────────────────────
+
+// Forward file paths to Flutter via the open_files MethodChannel.
+static void send_open_files(MyApplication* self) {
+  if (!self->dart_entrypoint_arguments || !self->fl_view) return;
+
+  // Collect non-empty, non-flag arguments that exist as files on disk.
+  GPtrArray* paths = g_ptr_array_new();
+  for (gchar** arg = self->dart_entrypoint_arguments; *arg != nullptr; arg++) {
+    if ((*arg)[0] != '-' && g_file_test(*arg, G_FILE_TEST_EXISTS)) {
+      g_ptr_array_add(paths, g_strdup(*arg));
+    }
+  }
+
+  if (paths->len == 0) {
+    g_ptr_array_free(paths, TRUE);
+    return;
+  }
+
+  FlEngine* engine = fl_view_get_engine(self->fl_view);
+  FlBinaryMessenger* messenger = fl_engine_get_binary_messenger(engine);
+
+  g_autoptr(FlMethodChannel) channel = fl_method_channel_new(
+      messenger,
+      "com.svnate.sendate/open_files",
+      FL_METHOD_CODEC(fl_standard_method_codec_new()));
+
+  // Build a FlValue list of file paths
+  g_autoptr(FlValue) args = fl_value_new_list();
+  for (guint i = 0; i < paths->len; i++) {
+    fl_value_append_take(args, fl_value_new_string((const char*)paths->pdata[i]));
+  }
+
+  fl_method_channel_invoke_method(channel, "openFiles", args, nullptr, nullptr, nullptr);
+
+  g_ptr_array_free(paths, TRUE);
+}
+
+// ─── Callbacks ───────────────────────────────────────────────────────────
+
 // Called when first Flutter frame received.
 static void first_frame_cb(MyApplication* self, FlView* view) {
   gtk_widget_show(gtk_widget_get_toplevel(GTK_WIDGET(view)));
+  // Now the Flutter engine is ready — deliver any file-path arguments.
+  send_open_files(self);
 }
 
 // Implements GApplication::activate.
@@ -59,6 +105,7 @@ static void my_application_activate(GApplication* application) {
       project, self->dart_entrypoint_arguments);
 
   FlView* view = fl_view_new(project);
+  self->fl_view = view;  // Store for send_open_files after first frame
   GdkRGBA background_color;
   // Background defaults to black, override it here if necessary, e.g. #00000000
   // for transparent.

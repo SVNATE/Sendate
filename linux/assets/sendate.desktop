@@ -1,0 +1,11 @@
+[Desktop Entry]
+Name=Sendate
+Comment=Privacy-first offline file transfer
+Exec=sendate %F
+Icon=sendate
+Terminal=false
+Type=Application
+Categories=Network;FileTransfer;
+MimeType=application/octet-stream;application/zip;application/pdf;application/msword;application/vnd.openxmlformats-officedocument.wordprocessingml.document;application/vnd.ms-excel;application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;image/jpeg;image/png;image/gif;image/webp;image/svg+xml;video/mp4;video/x-matroska;video/quicktime;audio/mpeg;audio/ogg;audio/wav;text/plain;text/html;text/csv;
+StartupNotify=true
+StartupWMClass=sendate

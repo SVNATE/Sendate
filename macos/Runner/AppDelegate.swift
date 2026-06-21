@@ -214,4 +214,22 @@ class AppDelegate: FlutterAppDelegate, NSMenuDelegate {
     clipboardTimer?.invalidate()
     clipboardTimer = nil
   }
+
+  // MARK: - Open With / Drag-onto-icon (share sheet)
+
+  override func application(_ sender: NSApplication, openFiles filenames: [String]) {
+    guard !filenames.isEmpty else { return }
+    // Forward to Flutter via the open_files MethodChannel
+    if let controller = mainFlutterWindow?.contentViewController as? FlutterViewController {
+      let channel = FlutterMethodChannel(
+        name: "com.svnate.sendate/open_files",
+        binaryMessenger: controller.engine.binaryMessenger
+      )
+      channel.invokeMethod("openFiles", arguments: filenames)
+    }
+    // Bring window to front so the user sees the transfer UI
+    mainFlutterWindow?.makeKeyAndOrderFront(nil)
+    NSApp.setActivationPolicy(.regular)
+    NSApp.activate(ignoringOtherApps: true)
+  }
 }

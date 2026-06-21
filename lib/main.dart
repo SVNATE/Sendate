@@ -13,6 +13,7 @@ import 'features/onboarding/presentation/screens/onboarding_screen.dart';
 import 'features/settings/presentation/screens/app_lock_screen.dart';
 import 'services/device/device_identity_service.dart';
 import 'services/expiry/transfer_expiry_service.dart';
+import 'services/share/incoming_share_service.dart';
 import 'services/foreground/android_foreground_service.dart';
 import 'services/background/system_tray_service.dart';
 import 'services/network/connectivity_monitor.dart';
@@ -282,6 +283,47 @@ class _SendateAppState extends ConsumerState<SendateApp> {
         ref.listen(clipboardAutoSyncProvider, (_, enabled) {
           AndroidForegroundService.instance.updateClipboardAutoSync(enabled);
         });
+      }
+
+      // ── Incoming share / Open With / Send To ────────────────────────────
+      // Set up AFTER discovery is running so we can reach nearby devices.
+      try {
+        final shareService = IncomingShareService.instance;
+        shareService.onFilesShared = (List<String> filePaths) {
+          // Bring window to front on desktop
+          if (!Platform.isAndroid && !Platform.isIOS) {
+            try {
+              // tray service handles window show
+              SystemTrayService.instance.onOpenApp?.call();
+            } catch (_) {}
+          }
+          // Pick the first available device, or let the user choose via the UI
+          final devices = ref.read(allNearbyDevicesProvider);
+          final device = devices.firstOrNull;
+          if (device != null) {
+            ref.read(transferControllerProvider).sendFiles(
+              filePaths: filePaths,
+              target: device,
+            );
+          } else {
+            // No device available yet — store for the next device that appears
+            debugPrint('[IncomingShare] No device available, will retry when discovered');
+            // Listen for first device and send then
+            ref.read(discoveryServiceProvider).devicesStream.firstWhere((d) => d.isNotEmpty).then((d) {
+              ref.read(transferControllerProvider).sendFiles(
+                filePaths: filePaths,
+                target: d.first,
+              );
+            }).catchError((e) {
+              debugPrint('[IncomingShare] No device found within timeout: $e');
+            });
+          }
+        };
+        shareService.init().catchError((e) {
+          debugPrint('[Main] IncomingShareService init failed: $e');
+        });
+      } catch (e) {
+        debugPrint('[Main] IncomingShareService setup failed: $e');
       }
 
       // Auto-start clipboard sync when devices are found

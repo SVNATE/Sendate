@@ -64,6 +64,16 @@ Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: 
 ; Add firewall exception for local network discovery
 Root: HKCU; Subkey: "Software\{#MyAppName}"; ValueType: string; ValueName: "InstallPath"; ValueData: "{app}"; Flags: uninsdeletekey
 
+; ── "Open With" / "Send To" shell integration ──────────────────────────────
+; Register Sendate as a handler for any file type via the shell
+Root: HKCU; Subkey: "Software\Classes\Sendate.File"; ValueType: string; ValueName: ""; ValueData: "File"; Flags: uninsdeletekey
+Root: HKCU; Subkey: "Software\Classes\Sendate.File\DefaultIcon"; ValueType: string; ValueName: ""; ValueData: """{app}\{#MyAppExeName}"",0"; Flags: uninsdeletekey
+Root: HKCU; Subkey: "Software\Classes\Sendate.File\shell\open\command"; ValueType: string; ValueName: ""; ValueData: """{app}\{#MyAppExeName}"" ""%1"""; Flags: uninsdeletekey
+; Register as "Open With" option for all files (*)
+Root: HKCU; Subkey: "Software\Classes\*\OpenWithList\{#MyAppExeName}"; ValueType: string; ValueName: ""; ValueData: ""; Flags: uninsdeletekey
+Root: HKCU; Subkey: "Software\Classes\*\OpenWithProgids\Sendate.File"; ValueType: string; ValueName: ""; ValueData: ""; Flags: uninsdeletekey
+; "Send To" shortcut — created in CurStepChanged below
+
 [Run]
 ; Launch app after install
 Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#StringChange(MyAppName, '&', '&&')}}"; Flags: nowait postinstall skipifsilent
@@ -80,6 +90,17 @@ begin
     Exec('netsh', 'advfirewall firewall add rule name="Sendate TCP" dir=in action=allow program="' + ExpandConstant('{app}\{#MyAppExeName}') + '" protocol=tcp enable=yes', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
     // Add inbound firewall rule for Sendate (UDP - for discovery)
     Exec('netsh', 'advfirewall firewall add rule name="Sendate UDP" dir=in action=allow program="' + ExpandConstant('{app}\{#MyAppExeName}') + '" protocol=udp enable=yes', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+    // Create "Send To" shortcut so users can right-click any file → Send To → Sendate
+    CreateShellLink(
+      ExpandConstant('{sendto}\{#MyAppName}.lnk'),
+      ExpandConstant('{app}\{#MyAppExeName}'),
+      '',
+      ExpandConstant('{app}'),
+      ExpandConstant('{app}\{#MyAppExeName}'),
+      0,
+      '',
+      0
+    );
   end;
 end;
 
@@ -92,5 +113,7 @@ begin
   begin
     Exec('netsh', 'advfirewall firewall delete rule name="Sendate TCP"', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
     Exec('netsh', 'advfirewall firewall delete rule name="Sendate UDP"', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+    // Remove Send To shortcut
+    DeleteFile(ExpandConstant('{sendto}\{#MyAppName}.lnk'));
   end;
 end;
