@@ -63,10 +63,21 @@ class _TransferProgressScreenState
   /// Returns only the transfers that belong to the current batch.
   /// Filters by deviceIds when provided; shows all active transfers for
   /// broadcast sends where deviceIds is empty.
-  void _updateTrackedTransfers(List<TransferModel> allActive) {
+  void _updateTrackedTransfers(List<TransferModel> allActive, List<TransferModel> history) {
     for (final t in allActive) {
       if (widget.args.deviceIds.isEmpty || widget.args.deviceIds.contains(t.deviceId)) {
         _trackedTransfers[t.id] = t;
+      }
+    }
+
+    for (final id in _trackedTransfers.keys.toList()) {
+      if (!allActive.any((t) => t.id == id)) {
+        try {
+          final completedTransfer = history.firstWhere((t) => t.id == id);
+          _trackedTransfers[id] = completedTransfer;
+        } catch (_) {
+          // Ignore if missing entirely
+        }
       }
     }
   }
@@ -137,7 +148,8 @@ class _TransferProgressScreenState
   @override
   Widget build(BuildContext context) {
     final allActive = ref.watch(activeTransfersProvider);
-    _updateTrackedTransfers(allActive);
+    final history = ref.read(transferHistoryProvider);
+    _updateTrackedTransfers(allActive, history);
     
     final batch = _getBatch();
     _checkAutoPop(batch);
