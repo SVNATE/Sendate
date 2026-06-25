@@ -60,6 +60,22 @@ class TrustedDevicesNotifier extends StateNotifier<List<DeviceModel>> {
     _box.delete(deviceId);
   }
 
+  void updateDeviceIp(String deviceId, String? newIp, int? newPort) {
+    final index = state.indexWhere((d) => d.id == deviceId);
+    if (index >= 0) {
+      final updated = state[index].copyWith(ipAddress: newIp, port: newPort);
+      state = [...state]..[index] = updated;
+      _box.put(deviceId, {
+        'id': updated.id,
+        'name': updated.name,
+        'deviceType': updated.deviceType.name,
+        'fingerprint': updated.fingerprint,
+        'ipAddress': updated.ipAddress,
+        'port': updated.port,
+      });
+    }
+  }
+
   bool isTrusted(String deviceId) {
     return state.any((d) => d.id == deviceId);
   }

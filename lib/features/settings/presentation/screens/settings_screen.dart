@@ -90,8 +90,8 @@ class SettingsScreen extends ConsumerWidget {
                     ),
                     _SettingsToggleItem(
                       icon: LucideIcons.zap,
-                      title: 'Auto Accept',
-                      subtitle: 'From trusted devices only',
+                      title: 'Auto-Accept All',
+                      subtitle: 'Accept files from any device without prompting',
                       value: autoAccept,
                       onChanged: (_) =>
                           ref.read(autoAcceptProvider.notifier).toggle(),

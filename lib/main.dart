@@ -14,6 +14,7 @@ import 'features/settings/presentation/screens/app_lock_screen.dart';
 import 'services/device/device_identity_service.dart';
 import 'services/expiry/transfer_expiry_service.dart';
 import 'services/share/incoming_share_service.dart';
+import 'features/send/presentation/screens/transfer_progress_screen.dart';
 import 'services/foreground/android_foreground_service.dart';
 import 'services/background/system_tray_service.dart';
 import 'services/network/connectivity_monitor.dart';
@@ -270,6 +271,16 @@ class _SendateAppState extends ConsumerState<SendateApp> {
                     filePaths: filePaths,
                     target: device,
                   );
+                  final context = globalNavigatorKey.currentContext;
+                  if (context != null) {
+                    context.push(
+                      '/transfer-progress',
+                      extra: TransferProgressArgs(
+                        deviceIds: [device.id],
+                        deviceName: device.name,
+                      ),
+                    );
+                  }
                 }
               }
             }
@@ -360,19 +371,17 @@ class _SendateAppState extends ConsumerState<SendateApp> {
 
         // transfer.deviceId is now the sender's actual device ID (from header)
         // or falls back to IP address for older protocol versions.
-        // Check against both device ID and IP address for compatibility.
-        final senderIp = transfer.deviceId;
+        final senderId = transfer.deviceId;
 
-        if (blockedDevices.contains(senderIp)) return false;
+        if (blockedDevices.contains(senderId)) return false;
 
         // Auto-accept from trusted devices — no approval dialog needed
         final isTrusted = trustedDevices.any((d) =>
-            d.id == senderIp ||
-            d.ipAddress == senderIp ||
-            d.name == transfer.deviceName);
+            d.id == senderId ||
+            d.ipAddress == senderId);
         if (isTrusted) return true;
 
-        // Also auto-accept if the global auto-accept toggle is on
+        // Auto-accept if the global "Auto-Accept All" toggle is on
         if (autoAccept) return true;
 
         return showTransferApprovalDialog(
@@ -419,6 +428,7 @@ class _SendateAppState extends ConsumerState<SendateApp> {
       // + Update system tray with device names
       ref.read(discoveryServiceProvider).devicesStream.listen((devices) {
         final trusted = ref.read(trustedDevicesProvider);
+        final trustedNotifier = ref.read(trustedDevicesProvider.notifier);
         final conn = ref.read(persistentConnectionProvider);
         final clipService = ref.read(clipboardSyncServiceProvider);
 
@@ -426,7 +436,15 @@ class _SendateAppState extends ConsumerState<SendateApp> {
         clipService.updateKnownDevices(devices);
 
         for (final device in devices) {
-          if (trusted.any((t) => t.id == device.id) && !conn.isConnected(device.id)) {
+          // Sync IP if it's a trusted device and its IP/port changed
+          final existingTrusted = trusted.where((t) => t.id == device.id).firstOrNull;
+          if (existingTrusted != null) {
+            if (existingTrusted.ipAddress != device.ipAddress || existingTrusted.port != device.port) {
+              trustedNotifier.updateDeviceIp(device.id, device.ipAddress, device.port);
+            }
+          }
+
+          if (existingTrusted != null && !conn.isConnected(device.id)) {
             conn.connectToDevice(device);
           }
         }

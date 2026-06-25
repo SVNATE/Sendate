@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:gap/gap.dart';
+import 'package:go_router/go_router.dart';
 import 'package:lucide_icons/lucide_icons.dart';
+
+import '../../features/send/presentation/screens/transfer_progress_screen.dart';
 
 import '../../core/theme/app_colors.dart';
 import '../models/transfer_model.dart';
@@ -19,8 +22,18 @@ class ActiveTransfersSheet extends ConsumerWidget {
       return const SizedBox.shrink();
     }
 
-    return Container(
-      margin: const EdgeInsets.all(16),
+    return GestureDetector(
+      onTap: () {
+        context.push(
+          '/transfer-progress',
+          extra: const TransferProgressArgs(
+            deviceIds: [],
+            deviceName: 'Active Transfers',
+          ),
+        );
+      },
+      child: Container(
+        margin: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: Theme.of(context).colorScheme.surface,
         borderRadius: BorderRadius.circular(20),
@@ -73,6 +86,7 @@ class ActiveTransfersSheet extends ConsumerWidget {
           ),
           const Gap(8),
         ],
+      ),
       ),
     );
   }

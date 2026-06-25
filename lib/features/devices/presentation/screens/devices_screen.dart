@@ -33,7 +33,9 @@ class _DevicesScreenState extends ConsumerState<DevicesScreen> {
   @override
   Widget build(BuildContext context) {
     final trustedDevices = ref.watch(trustedDevicesProvider);
-    final nearbyDevices = ref.watch(allNearbyDevicesProvider);
+    final nearbyDevices = ref.watch(allNearbyDevicesProvider)
+        .where((d) => !trustedDevices.any((t) => t.id == d.id))
+        .toList();
     final favoriteIds = ref.watch(favoritedDevicesProvider);
     final pinnedDevices = [...trustedDevices, ...nearbyDevices]
         .where((d) => favoriteIds.contains(d.id))
