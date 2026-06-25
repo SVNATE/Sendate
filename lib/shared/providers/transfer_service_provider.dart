@@ -37,6 +37,7 @@ final transferServiceProvider = Provider<TransferService>((ref) {
   service.onFileReceived = (transfer, savedPath) {
     NotificationService.showFileReceived(
       fileName: transfer.fileName,
+      filePath: savedPath,
       senderName: transfer.deviceName,
       fileSize: transfer.bytesTransferred,
     );
@@ -84,6 +85,7 @@ void _wireTransferStream(
           transfer.direction == TransferDirection.received) {
         NotificationService.showFileReceived(
           fileName: transfer.fileName,
+          filePath: transfer.filePath,
           senderName: transfer.deviceName,
           fileSize: transfer.bytesTransferred,
         );

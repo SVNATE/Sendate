@@ -171,6 +171,8 @@ class BrowserReceiverService {
     if (host == 'localhost' || host == '127.0.0.1') return true;
     // Private IPv4 ranges
     if (host.startsWith('192.168.') || host.startsWith('10.') || host.startsWith('172.')) return true;
+    // CGNAT / Tailscale
+    if (host.startsWith('100.')) return true;
     // Link-local
     if (host.startsWith('169.254.')) return true;
     return false;
@@ -231,6 +233,7 @@ class BrowserReceiverService {
 
       final savePath = await _getSaveDir();
       final savedFiles = <String>[];
+      final savedPaths = <String>[];
 
       // StreamingMimeMultipartParser processes the request stream chunk-by-chunk.
       final parser = StreamingMimeMultipartParser(boundary);
@@ -289,6 +292,7 @@ class BrowserReceiverService {
 
         final savedName = resolvedPath.split(Platform.pathSeparator).last;
         savedFiles.add(savedName);
+        savedPaths.add(resolvedPath);
         debugPrint('[BrowserReceiver] Saved: $resolvedPath ($fileBytes bytes)');
       }
 
@@ -310,8 +314,10 @@ class BrowserReceiverService {
         final displayName = savedFiles.length == 1
             ? savedFiles.first
             : '${savedFiles.length} files';
+        final displayPath = savedPaths.length == 1 ? savedPaths.first : savePath;
         NotificationService.showFileReceived(
           fileName: displayName,
+          filePath: displayPath,
           senderName: 'Browser ($clientIp)',
           fileSize: totalBytesWritten,
         );

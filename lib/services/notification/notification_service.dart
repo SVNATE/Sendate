@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:open_filex/open_filex.dart';
 
 /// Notification service with persistent connection notification + action buttons.
 class NotificationService {
@@ -340,6 +341,7 @@ class NotificationService {
   /// Show a receive-side notification when a file arrives (TCP or browser).
   static Future<void> showFileReceived({
     required String fileName,
+    required String filePath,
     required String senderName,
     required int fileSize,
   }) async {
@@ -360,6 +362,7 @@ class NotificationService {
         iOS: const DarwinNotificationDetails(),
         macOS: const DarwinNotificationDetails(),
       ),
+      payload: filePath,
     );
   }
 
@@ -377,6 +380,9 @@ class NotificationService {
         // Clipboard already set by the clipboard service
         break;
       case 'open':
+        if (payload.isNotEmpty) {
+          OpenFilex.open(payload);
+        }
         _pendingAction = NotificationAction.openFile;
       case 'accept_file':
         // User accepted an incoming file request shown as notification

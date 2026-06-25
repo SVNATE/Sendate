@@ -38,8 +38,10 @@ class TransferProgressScreen extends ConsumerStatefulWidget {
 
 class _TransferProgressScreenState
     extends ConsumerState<TransferProgressScreen> {
+  final Map<String, TransferModel> _trackedTransfers = {};
   late final Stopwatch _stopwatch;
   Timer? _ticker;
+  bool _hasAutoPopped = false;
 
   @override
   void initState() {
@@ -61,49 +63,64 @@ class _TransferProgressScreenState
   /// Returns only the transfers that belong to the current batch.
   /// Filters by deviceIds when provided; shows all active transfers for
   /// broadcast sends where deviceIds is empty.
-  List<TransferModel> _batchTransfers(List<TransferModel> all) {
-    if (widget.args.deviceIds.isEmpty) return all;
-    return all
-        .where((t) => widget.args.deviceIds.contains(t.deviceId))
-        .toList();
+  void _updateTrackedTransfers(List<TransferModel> allActive) {
+    for (final t in allActive) {
+      if (widget.args.deviceIds.isEmpty || widget.args.deviceIds.contains(t.deviceId)) {
+        _trackedTransfers[t.id] = t;
+      }
+    }
   }
 
-  bool _allDone(List<TransferModel> batch) => batch.isNotEmpty &&
-      batch.every(
-        (t) =>
-            t.state == TransferState.completed ||
-            t.state == TransferState.failed ||
-            t.state == TransferState.cancelled,
-      );
+  List<TransferModel> _getBatch() {
+    return _trackedTransfers.values.toList();
+  }
 
-  bool _hasActive(List<TransferModel> batch) => batch.any(
-        (t) =>
-            t.state == TransferState.sending ||
-            t.state == TransferState.connecting ||
-            t.state == TransferState.waitingApproval ||
-            t.state == TransferState.queued ||
-            t.state == TransferState.paused ||
-            t.state == TransferState.retrying,
-      );
+  bool _allDone(List<TransferModel> batch) {
+    if (batch.isEmpty) return false;
+    return batch.every((t) =>
+        t.state == TransferState.completed || t.state == TransferState.failed || t.state == TransferState.cancelled);
+  }
+
+  void _checkAutoPop(List<TransferModel> batch) {
+    if (_hasAutoPopped || batch.isEmpty) return;
+    
+    if (_allDone(batch)) {
+      // Only auto-pop if everything succeeded (no errors/cancellations)
+      final allOk = batch.every((t) => t.state == TransferState.completed);
+      if (allOk) {
+        _hasAutoPopped = true;
+        Future.delayed(const Duration(seconds: 2), () {
+          if (mounted) {
+            Navigator.of(context).pop();
+          }
+        });
+      }
+    }
+  }
 
   Future<bool> _onWillPop(List<TransferModel> batch) async {
-    if (!_hasActive(batch)) return true;
+    final active = batch.where((t) => t.state == TransferState.sending || t.state == TransferState.receiving).toList();
+
+    if (active.isEmpty) return true;
+
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Transfer in progress'),
-        content: const Text(
-          'There are active transfers. Leaving this screen will not cancel them — '
-          'you can monitor them from the Transfers bar at the bottom.',
-        ),
+      builder: (context) => AlertDialog(
+        title: const Text('Cancel Transfers?'),
+        content: const Text('Going back will cancel all ongoing transfers in this batch.'),
         actions: [
           TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('Stay'),
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('No'),
           ),
           FilledButton(
-            onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text('Leave'),
+            onPressed: () {
+              for (final t in active) {
+                ref.read(transferServiceProvider).cancelTransfer(t.id);
+              }
+              Navigator.of(context).pop(true);
+            },
+            child: const Text('Yes, Cancel'),
           ),
         ],
       ),
@@ -120,7 +137,11 @@ class _TransferProgressScreenState
   @override
   Widget build(BuildContext context) {
     final allActive = ref.watch(activeTransfersProvider);
-    final batch = _batchTransfers(allActive);
+    _updateTrackedTransfers(allActive);
+    
+    final batch = _getBatch();
+    _checkAutoPop(batch);
+
     final done = _allDone(batch);
     final colorScheme = Theme.of(context).colorScheme;
 

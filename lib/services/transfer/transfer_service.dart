@@ -411,7 +411,14 @@ class TransferService {
       }
 
       stopwatch.stop();
+      await socket.flush();
       await socket.close();
+      
+      // Wait for receiver to finish processing and close the connection
+      try {
+        await socket.listen((_) {}).asFuture().timeout(const Duration(seconds: 30));
+      } catch (_) {}
+
       _clearResumeData(transferId);
 
       transfer = transfer.copyWith(
@@ -511,9 +518,11 @@ class TransferService {
 
     // Encrypted chunk framing state
     int? pendingChunkLen;
+    StreamSubscription<Uint8List>? subscription;
 
-    socket.listen(
+    subscription = socket.listen(
       (data) async {
+        subscription?.pause();
         buffer.addAll(data);
 
         try {
@@ -565,61 +574,58 @@ class TransferService {
             _activeTransfers[transferId!] = transfer!;
             _emit(transfer!);
 
-            // Approval (potentially async — run in microtask)
-            Future.microtask(() async {
-              bool approved = true;
-              if (onTransferRequest != null) {
-                approved = await onTransferRequest!(transfer!);
-              }
-              if (!approved) {
-                socket.add([0]);
-                await socket.flush();
-                socket.destroy();
-                _finishTransfer(transfer!, TransferState.cancelled);
-                return;
-              }
-
-              socket.add([1]);
+            // Approval (await directly to hold the paused stream)
+            bool approved = true;
+            if (onTransferRequest != null) {
+              approved = await onTransferRequest!(transfer!);
+            }
+            if (!approved) {
+              socket.add([0]);
               await socket.flush();
+              socket.destroy();
+              _finishTransfer(transfer!, TransferState.cancelled);
+              return;
+            }
 
-              final savePath =
-                  await _getUniqueSavePath(fileName!);
-              sink = File(savePath).openWrite();
-              stopwatch = Stopwatch()..start();
+            socket.add([1]);
+            await socket.flush();
 
-              transfer = transfer!.copyWith(
-                  state: TransferState.receiving, filePath: savePath);
-              _activeTransfers[transferId!] = transfer!;
-              _emit(transfer!);
-              approvalSent = true;
-              receiving = true;
-              transferId$.complete(savePath);
+            final savePath =
+                await _getUniqueSavePath(fileName!);
+            sink = File(savePath).openWrite();
+            stopwatch = Stopwatch()..start();
 
-              // Process any bytes that already arrived
-              if (buffer.isNotEmpty) {
-                _processBodyBytes(
-                  buffer: buffer,
-                  isEncrypted: isEncrypted!,
-                  sessionKey: sessionKey,
-                  sink: sink!,
-                  stopwatch: stopwatch!,
-                  fileSize: fileSize!,
-                  transfer: transfer!,
-                  transferId: transferId!,
-                  pendingChunkLen: pendingChunkLen,
-                  onProgress: (t, pcl) {
-                    transfer = t;
-                    pendingChunkLen = pcl;
-                    bytesReceived = t.bytesTransferred;
-                    _activeTransfers[transferId!] = t;
-                    _emit(t);
-                  },
-                );
-              }
-            });
+            transfer = transfer!.copyWith(
+                state: TransferState.receiving, filePath: savePath);
+            _activeTransfers[transferId!] = transfer!;
+            _emit(transfer!);
+            approvalSent = true;
+            receiving = true;
+            transferId$.complete(savePath);
+
+            // Process any bytes that already arrived
+            if (buffer.isNotEmpty) {
+              pendingChunkLen = await _processBodyBytes(
+                buffer: buffer,
+                isEncrypted: isEncrypted!,
+                sessionKey: sessionKey,
+                sink: sink!,
+                stopwatch: stopwatch!,
+                fileSize: fileSize!,
+                transfer: transfer!,
+                transferId: transferId!,
+                pendingChunkLen: pendingChunkLen,
+                onProgress: (t) {
+                  transfer = t;
+                  bytesReceived = t.bytesTransferred;
+                  _activeTransfers[transferId!] = t;
+                  _emit(t);
+                },
+              );
+            }
           } else if (approvalSent && receiving && sink != null) {
             // Step 3: stream body bytes
-            _processBodyBytes(
+            pendingChunkLen = await _processBodyBytes(
               buffer: buffer,
               isEncrypted: isEncrypted!,
               sessionKey: sessionKey,
@@ -629,9 +635,8 @@ class TransferService {
               transfer: transfer!,
               transferId: transferId!,
               pendingChunkLen: pendingChunkLen,
-              onProgress: (t, pcl) {
+              onProgress: (t) {
                 transfer = t;
-                pendingChunkLen = pcl;
                 bytesReceived = t.bytesTransferred;
                 _activeTransfers[transferId!] = t;
                 _emit(t);
@@ -645,6 +650,8 @@ class TransferService {
             _finishTransfer(transfer!, TransferState.failed,
                 error: e.toString());
           }
+        } finally {
+          subscription?.resume();
         }
       },
       onDone: () async {
@@ -670,6 +677,8 @@ class TransferService {
           _activeTransfers.remove(transferId);
           _emit(completed);
           onFileReceived?.call(completed, savePath);
+          
+          socket.destroy(); // Signal sender that we are completely done
         } catch (e) {
           _log.debug('Receive finalize error: $e');
           if (transfer != null) {
@@ -692,7 +701,7 @@ class TransferService {
 
   /// Process body bytes from [buffer] in-place, handling both plain and
   /// encrypted framing.  Clears consumed bytes from buffer.
-  void _processBodyBytes({
+  Future<int?> _processBodyBytes({
     required List<int> buffer,
     required bool isEncrypted,
     required Uint8List? sessionKey,
@@ -702,54 +711,49 @@ class TransferService {
     required TransferModel transfer,
     required String transferId,
     required int? pendingChunkLen,
-    required void Function(TransferModel updated, int? pendingChunkLen)
-        onProgress,
-  }) {
+    required void Function(TransferModel updated) onProgress,
+  }) async {
     if (isEncrypted && sessionKey != null) {
       // Framing: [4-byte packed-len][packed chunk] …
       while (true) {
         int? chunkLen = pendingChunkLen;
         if (chunkLen == null) {
-          if (buffer.length < 4) break;
+          if (buffer.length < 4) return pendingChunkLen;
           chunkLen = _bytesToInt(buffer.sublist(0, 4));
           buffer.removeRange(0, 4);
           pendingChunkLen = chunkLen;
         }
-        if (buffer.length < chunkLen) break;
+        if (buffer.length < chunkLen) return pendingChunkLen;
 
         final packed =
             Uint8List.fromList(buffer.sublist(0, chunkLen));
         buffer.removeRange(0, chunkLen);
         pendingChunkLen = null;
 
-        // Decrypt synchronously is not possible; schedule async work.
-        // We use a fire-and-forget microtask; ordering is preserved because
-        // each subsequent microtask queues after the previous one.
-        final capturedTransfer = transfer;
-        final capturedBytes = capturedTransfer.bytesTransferred;
-        _encryptionService
-            .decryptChunk(packed, sessionKey)
-            .then((decrypted) {
-          sink.add(decrypted);
-          final newBytes = capturedBytes + decrypted.length;
-          final elapsed = stopwatch.elapsedMilliseconds;
-          final speed =
-              elapsed > 0 ? (newBytes * 1000) ~/ elapsed : 0;
-          final updated = capturedTransfer.copyWith(
-            progress:
-                (newBytes / fileSize).clamp(0.0, 1.0),
-            bytesTransferred: newBytes,
-            speed: speed,
-          );
-          onProgress(updated, null);
-        });
+        // Decrypt asynchronously but await sequentially to preserve order
+        final decrypted = await _encryptionService.decryptChunk(packed, sessionKey);
+        
+        sink.add(decrypted);
+        await sink.flush(); // Prevent OOM for large files
+
+        final newBytes = transfer.bytesTransferred + decrypted.length;
+        final elapsed = stopwatch.elapsedMilliseconds;
+        final speed = elapsed > 0 ? (newBytes * 1000) ~/ elapsed : 0;
+        transfer = transfer.copyWith(
+          progress: (newBytes / fileSize).clamp(0.0, 1.0),
+          bytesTransferred: newBytes,
+          speed: speed,
+        );
+        onProgress(transfer);
       }
     } else {
       // Plain: raw bytes
-      if (buffer.isEmpty) return;
+      if (buffer.isEmpty) return null;
       final chunk = List<int>.from(buffer);
       buffer.clear();
       sink.add(chunk);
+      await sink.flush(); // Prevent OOM for large files
+
       final newBytes = transfer.bytesTransferred + chunk.length;
       final elapsed = stopwatch.elapsedMilliseconds;
       final speed = elapsed > 0 ? (newBytes * 1000) ~/ elapsed : 0;
@@ -758,8 +762,9 @@ class TransferService {
         bytesTransferred: newBytes,
         speed: speed,
       );
-      onProgress(updated, null);
+      onProgress(updated);
     }
+    return pendingChunkLen;
   }
 
   // -------------------------------------------------------------------------

@@ -26,6 +26,7 @@ import 'shared/providers/discovery_provider.dart';
 import 'shared/providers/messaging_provider.dart';
 import 'shared/providers/settings_provider.dart';
 import 'shared/providers/transfer_service_provider.dart';
+import 'shared/widgets/device_selection_sheet.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -290,7 +291,7 @@ class _SendateAppState extends ConsumerState<SendateApp> {
       // Set up AFTER discovery is running so we can reach nearby devices.
       try {
         final shareService = IncomingShareService.instance;
-        shareService.onFilesShared = (List<String> filePaths) {
+        shareService.onFilesShared = (List<String> filePaths) async {
           // Bring window to front on desktop
           if (!Platform.isAndroid && !Platform.isIOS) {
             try {
@@ -298,26 +299,16 @@ class _SendateAppState extends ConsumerState<SendateApp> {
               SystemTrayService.instance.onOpenApp?.call();
             } catch (_) {}
           }
-          // Pick the first available device, or let the user choose via the UI
-          final devices = ref.read(allNearbyDevicesProvider);
-          final device = devices.firstOrNull;
+          
+          final context = globalNavigatorKey.currentContext;
+          if (context == null) return;
+          
+          final device = await showDeviceSelectionSheet(context);
           if (device != null) {
             ref.read(transferControllerProvider).sendFiles(
               filePaths: filePaths,
               target: device,
             );
-          } else {
-            // No device available yet — store for the next device that appears
-            debugPrint('[IncomingShare] No device available, will retry when discovered');
-            // Listen for first device and send then
-            ref.read(discoveryServiceProvider).devicesStream.firstWhere((d) => d.isNotEmpty).then((d) {
-              ref.read(transferControllerProvider).sendFiles(
-                filePaths: filePaths,
-                target: d.first,
-              );
-            }).catchError((e) {
-              debugPrint('[IncomingShare] No device found within timeout: $e');
-            });
           }
         };
         shareService.init().catchError((e) {
