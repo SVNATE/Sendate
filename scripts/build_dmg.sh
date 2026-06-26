@@ -63,8 +63,20 @@ rm -f "$DMG_PATH"
 rm -f "$DMG_TEMP"
 mkdir -p "$STAGING_DIR"
 
-# Step 3: Copy app and create Applications symlink
-cp -R "$APP_PATH" "$STAGING_DIR/${APP_NAME}.app"
+# Step 3: Copy app, clean attributes, and create Applications symlink
+cp -a "$APP_PATH" "$STAGING_DIR/${APP_NAME}.app"
+xattr -cr "$STAGING_DIR/${APP_NAME}.app"
+
+# Step 3.5: Code sign the App bundle
+echo "▶ Code signing App bundle..."
+if [ -n "$APPLE_DEV_ID" ]; then
+    echo "  Signing with Developer ID: $APPLE_DEV_ID"
+    codesign --force --deep --options runtime --timestamp --sign "$APPLE_DEV_ID" "$STAGING_DIR/${APP_NAME}.app"
+else
+    echo "  Ad-Hoc signing (No APPLE_DEV_ID provided)"
+    codesign --force --deep --sign - "$STAGING_DIR/${APP_NAME}.app"
+fi
+
 ln -s /Applications "$STAGING_DIR/Applications"
 
 # Step 4: Create temporary read-write DMG
@@ -139,11 +151,21 @@ hdiutil convert "$DMG_TEMP" -format UDZO -imagekey zlib-level=9 -o "$DMG_PATH" -
 rm -f "$DMG_TEMP"
 
 # Step 8.5: Sign the DMG
-if [ -n "$APPLE_TEAM_ID" ]; then
-    echo "▶ Code signing DMG with Team ID: $APPLE_TEAM_ID..."
-    codesign --force --sign "$APPLE_TEAM_ID" "$DMG_PATH"
+if [ -n "$APPLE_DEV_ID" ]; then
+    echo "▶ Code signing DMG with Developer ID..."
+    codesign --force --sign "$APPLE_DEV_ID" "$DMG_PATH"
 else
-    echo "▶ Skipping code signing (APPLE_TEAM_ID not set)"
+    echo "▶ Skipping DMG code signing (APPLE_DEV_ID not set)"
+fi
+
+# Step 8.6: Notarize the DMG
+if [ -n "$APPLE_DEV_ID" ] && [ -n "$NOTARY_PROFILE" ]; then
+    echo "▶ Notarizing DMG with Apple (this may take a few minutes)..."
+    xcrun notarytool submit "$DMG_PATH" --keychain-profile "$NOTARY_PROFILE" --wait
+    echo "▶ Stapling notarization ticket to DMG..."
+    xcrun stapler staple "$DMG_PATH"
+else
+    echo "▶ Skipping notarization (APPLE_DEV_ID or NOTARY_PROFILE not set)"
 fi
 
 # Step 9: Cleanup staging
@@ -164,7 +186,13 @@ if [ "$DO_INSTALL" = true ]; then
     echo ""
     echo "▶ Installing to /Applications..."
     rm -rf "/Applications/${APP_NAME}.app"
-    cp -R "$APP_PATH" "/Applications/${APP_NAME}.app"
+    cp -a "$APP_PATH" "/Applications/${APP_NAME}.app"
+    xattr -cr "/Applications/${APP_NAME}.app"
+    if [ -n "$APPLE_DEV_ID" ]; then
+        codesign --force --deep --options runtime --timestamp --sign "$APPLE_DEV_ID" "/Applications/${APP_NAME}.app"
+    else
+        codesign --force --deep --sign - "/Applications/${APP_NAME}.app"
+    fi
     echo "✓ Installed: /Applications/${APP_NAME}.app"
     echo "▶ Resetting Launchpad..."
     defaults write com.apple.dock ResetLaunchPad -bool true && killall Dock
