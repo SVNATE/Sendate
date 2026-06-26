@@ -249,6 +249,25 @@ class DiscoveryService {
         }
       }
     });
+
+    // FULL PROOF iOS FIX: Unicast Subnet Sweep
+    // Since Apple strictly blocks raw Multicast/Broadcast on iOS 14+ without special entitlements,
+    // we bypass this by firing UDP Unicast to every single IP in the subnet. Unicast is ALLOWED!
+    if (_localIp != null && _localIp!.isNotEmpty && _broadcastSocket != null) {
+      final parts = _localIp!.split('.');
+      if (parts.length == 4) {
+        final prefix = '${parts[0]}.${parts[1]}.${parts[2]}';
+        for (int i = 1; i < 255; i++) {
+          final targetIp = '$prefix.$i';
+          if (targetIp == _localIp) continue;
+          try {
+            _broadcastSocket!.send(data, InternetAddress(targetIp), AppConstants.discoveryPort);
+          } catch (_) {
+            // Ignore errors for individual IPs
+          }
+        }
+      }
+    }
   }
 
   /// Probe the gateway IP directly with a TCP connection.
@@ -258,16 +277,19 @@ class DiscoveryService {
   Future<void> _probeGateway() async {
     try {
       final gatewayIp = await _networkService.getGatewayIp();
-      if (gatewayIp == null || _localDevice == null) return;
-
-      // Send announce packet directly to the gateway IP via unicast UDP
-      _probeDirectIp(gatewayIp);
+      if (gatewayIp != null && _localDevice != null) {
+        // Send announce packet directly to the gateway IP via unicast UDP
+        _probeDirectIp(gatewayIp);
+      }
     } catch (e) {
       _log.debug('Gateway probe failed: $e');
     }
 
-    // Also probe common hardcoded gateways as fallback
-    for (final gwIp in ['192.168.43.1', '192.168.49.1', '172.20.10.1']) {
+    // Also probe common hardcoded gateways and hotspot clients as fallback
+    for (final gwIp in [
+      '192.168.43.1', '192.168.49.1', '172.20.10.1', // Hotspot Hosts
+      '192.168.43.100', '192.168.49.100', '172.20.10.2' // Hotspot Clients
+    ]) {
       _probeDirectIp(gwIp);
     }
   }
