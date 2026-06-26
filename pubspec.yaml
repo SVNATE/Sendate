@@ -1,7 +1,7 @@
 name: sendate
 description: "Privacy-first, offline-first, cross-platform file transfer."
 publish_to: 'none'
-version: 1.0.0+1
+version: 1.0.1+1
 
 environment:
   sdk: ^3.11.5
@@ -35,7 +35,7 @@ dependencies:
   path_provider: ^2.1.5
   share_plus: ^10.1.4
   mime: ^2.0.0
-  share_handler: ^0.0.25
+  share_handler: 0.0.16
 
   # QR
   qr_flutter: ^4.1.0
@@ -70,9 +70,33 @@ dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^6.0.0
+  flutter_launcher_icons: ^0.13.1
+  flutter_native_splash: ^2.4.0
 
 flutter:
   uses-material-design: true
   assets:
     - assets/icons/
     - assets/images/
+
+dependency_overrides:
+  share_handler_ios: 0.0.14
+
+flutter_launcher_icons:
+  android: "ic_launcher"
+  ios: true
+  remove_alpha_ios: true
+  macos:
+    generate: true
+  image_path: "src/img/app_logo.png"
+
+flutter_native_splash:
+  color: "#1A1A1A"
+  color_dark: "#1A1A1A"
+  image: "src/img/app_logo.png"
+  android: true
+  ios: true
+  android_12:
+    image: "src/img/app_logo.png"
+    icon_background_color: "#1A1A1A"
+

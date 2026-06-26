@@ -138,6 +138,14 @@ echo "▶ Compressing final DMG..."
 hdiutil convert "$DMG_TEMP" -format UDZO -imagekey zlib-level=9 -o "$DMG_PATH" -quiet
 rm -f "$DMG_TEMP"
 
+# Step 8.5: Sign the DMG
+if [ -n "$APPLE_TEAM_ID" ]; then
+    echo "▶ Code signing DMG with Team ID: $APPLE_TEAM_ID..."
+    codesign --force --sign "$APPLE_TEAM_ID" "$DMG_PATH"
+else
+    echo "▶ Skipping code signing (APPLE_TEAM_ID not set)"
+fi
+
 # Step 9: Cleanup staging
 rm -rf "$STAGING_DIR"
 
