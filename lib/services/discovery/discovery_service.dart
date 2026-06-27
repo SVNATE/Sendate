@@ -162,12 +162,20 @@ class DiscoveryService {
         reuseAddress: true,
         reusePort: true,
       );
-      _fallbackSocket!.listen((event) {
-        if (event == RawSocketEvent.read) {
-          final dg = _fallbackSocket?.receive();
-          if (dg != null) _processDatagram(dg);
-        }
-      });
+      _fallbackSocket!.listen(
+        (event) {
+          if (event == RawSocketEvent.read) {
+            final dg = _fallbackSocket?.receive();
+            if (dg != null) _processDatagram(dg);
+          }
+        },
+        onError: (e) {
+          _log.debug('Fallback socket error: $e');
+        },
+        onDone: () {
+          _log.debug('Fallback socket closed');
+        },
+      );
     } catch (e) {
       _log.debug('Fallback socket bind failed: $e');
     }
@@ -244,26 +252,34 @@ class DiscoveryService {
     });
     final data = utf8.encode(packet);
 
-    // Direct gateway probe (for Hotspot)
-    _networkService.getGatewayIp().then((gw) {
-      if (gw != null && _fallbackSocket != null) {
+    // Use an ephemeral socket for sending to prevent async OS errors (like 'No route to host')
+    // from crashing the main listening socket stream.
+    RawDatagramSocket.bind(InternetAddress.anyIPv4, 0).then((socket) {
+      socket.broadcastEnabled = true;
+
+      void sendTo(String ip) {
         try {
-          _fallbackSocket!.send(data, InternetAddress(gw), AppConstants.discoveryPort);
+          socket.send(data, InternetAddress(ip), AppConstants.discoveryPort);
         } catch (_) {}
       }
-    });
 
-    // Probe common hardcoded gateways and hotspot clients
-    for (final gwIp in [
-      '192.168.43.1', '192.168.49.1', '172.20.10.1', 
-      '192.168.43.100', '192.168.49.100', '172.20.10.2'
-    ]) {
-      if (_fallbackSocket != null) {
-         try {
-            _fallbackSocket!.send(data, InternetAddress(gwIp), AppConstants.discoveryPort);
-         } catch (_) {}
+      // Direct gateway probe (for Hotspot)
+      _networkService.getGatewayIp().then((gw) {
+        if (gw != null) sendTo(gw);
+      });
+
+      // Probe common hardcoded gateways and hotspot clients
+      for (final gwIp in [
+        '192.168.43.1', '192.168.49.1', '172.20.10.1', 
+        '192.168.43.100', '192.168.49.100', '172.20.10.2',
+        '255.255.255.255'
+      ]) {
+        sendTo(gwIp);
       }
-    }
+
+      // Close the ephemeral socket after allowing time for sends to flush
+      Future.delayed(const Duration(milliseconds: 500), () => socket.close());
+    }).catchError((_) {});
   }
 
   void _processDatagram(Datagram datagram) {
@@ -302,7 +318,28 @@ class DiscoveryService {
   void _cleanupStale() {
     final now = DateTime.now();
     final before = _discovered.length;
-    _discovered.removeWhere((_, d) => now.difference(d.lastSeen) > _staleTimeout);
+
+    // Get all device IDs currently active in mDNS
+    final mdnsActiveIds = <String>{};
+    if (_discovery != null) {
+      for (final s in _discovery!.services) {
+        if (s.txt != null && s.txt!['id'] != null) {
+          try {
+            mdnsActiveIds.add(utf8.decode(s.txt!['id']!));
+          } catch (_) {}
+        }
+      }
+    }
+
+    _discovered.removeWhere((id, d) {
+      // If it's still active via mDNS, don't remove it, and refresh its lastSeen
+      if (mdnsActiveIds.contains(id)) {
+        d.lastSeen = now;
+        return false;
+      }
+      return now.difference(d.lastSeen) > _staleTimeout;
+    });
+
     if (_discovered.length != before) {
       _devicesController.add(currentDevices);
     }
@@ -325,7 +362,7 @@ class DiscoveryService {
 
 class _DiscoveredDevice {
   final DeviceModel device;
-  final DateTime lastSeen;
+  DateTime lastSeen;
 
   _DiscoveredDevice({required this.device, required this.lastSeen});
 }

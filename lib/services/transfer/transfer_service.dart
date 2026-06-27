@@ -839,15 +839,12 @@ class TransferService {
         if (await dir.exists()) return '${dir.path}/$fileName';
       }
       if (Platform.isAndroid) {
-        final base = '/storage/emulated/0';
-        final dirPath = switch (saveLoc) {
-          'Documents' => '$base/Documents',
-          'Pictures' => '$base/Pictures',
-          _ => '$base/Download',
-        };
-        final dir = Directory(dirPath);
-        if (!await dir.exists()) await dir.create(recursive: true);
-        return '${dir.path}/$fileName';
+        // Use path_provider to get the app-specific isolated Downloads directory
+        // to avoid Android 11+ MANAGE_EXTERNAL_STORAGE restrictions.
+        final dir = await getDownloadsDirectory();
+        if (dir != null) {
+          return '${dir.path}/$fileName';
+        }
       }
       if (Platform.isMacOS || Platform.isLinux || Platform.isWindows) {
         final home = Platform.environment['HOME'] ??
@@ -870,6 +867,9 @@ class TransferService {
     try {
       final downloadsDir = await getDownloadsDirectory();
       if (downloadsDir != null) {
+        if (!await downloadsDir.exists()) {
+          await downloadsDir.create(recursive: true);
+        }
         return '${downloadsDir.path}/$fileName';
       }
     } catch (e) {
@@ -877,6 +877,9 @@ class TransferService {
     }
     try {
       final appDir = await getApplicationDocumentsDirectory();
+      if (!await appDir.exists()) {
+        await appDir.create(recursive: true);
+      }
       return '${appDir.path}/$fileName';
     } catch (e) {
       _log.debug('App documents directory fallback failed: $e');

@@ -94,7 +94,7 @@ class AutoConvertNotifier extends StateNotifier<bool> {
   }
 }
 
-/// Auto-accept from trusted
+/// Auto-accept all incoming transfers without prompting
 final autoAcceptProvider = StateNotifierProvider<AutoAcceptNotifier, bool>(
   (ref) => AutoAcceptNotifier(),
 );
@@ -104,13 +104,13 @@ class AutoAcceptNotifier extends StateNotifier<bool> {
 
   static bool _load() {
     final box = Hive.box(AppConstants.settingsBox);
-    return box.get('auto_accept_trusted', defaultValue: true) as bool;
+    return box.get('auto_accept_all', defaultValue: false) as bool;
   }
 
   Future<void> toggle() async {
     state = !state;
     final box = Hive.box(AppConstants.settingsBox);
-    await box.put('auto_accept_trusted', state);
+    await box.put('auto_accept_all', state);
   }
 }
 
