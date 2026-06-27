@@ -12,6 +12,7 @@ import '../../../../shared/providers/notification_sync_provider.dart';
 import '../../../../shared/providers/settings_provider.dart';
 import '../../../../shared/widgets/help_guide_sheet.dart';
 import '../../../settings/presentation/screens/app_lock_screen.dart';
+import 'package:flutter/services.dart' show rootBundle;
 import '../widgets/device_name_dialog.dart';
 import '../widgets/theme_selector_dialog.dart';
 
@@ -177,6 +178,18 @@ class SettingsScreen extends ConsumerWidget {
                   title: 'About',
                   children: [
                     _SettingsItem(
+                      icon: LucideIcons.shieldCheck,
+                      title: 'Privacy Policy',
+                      subtitle: 'How we protect your data',
+                      onTap: () => _openLegalDocument(context, 'Privacy Policy', 'assets/docs/PRIVACY_POLICY.md'),
+                    ),
+                    _SettingsItem(
+                      icon: LucideIcons.scroll,
+                      title: 'Terms & Conditions',
+                      subtitle: 'Rules and guidelines',
+                      onTap: () => _openLegalDocument(context, 'Terms & Conditions', 'assets/docs/TERMS_AND_CONDITIONS.md'),
+                    ),
+                    _SettingsItem(
                       icon: LucideIcons.info,
                       title: 'Version',
                       subtitle: '1.0.0',
@@ -305,6 +318,41 @@ class SettingsScreen extends ConsumerWidget {
     notifier.toggle();
     // Wire directly to discovery service
     ref.read(discoveryServiceProvider).hiddenMode = newVal;
+  }
+
+  void _openLegalDocument(BuildContext context, String title, String assetPath) async {
+    try {
+      final content = await rootBundle.loadString(assetPath);
+      if (!context.mounted) return;
+      
+      showDialog(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: Text(title, style: const TextStyle(fontWeight: FontWeight.bold)),
+          content: SizedBox(
+            width: double.maxFinite,
+            child: SingleChildScrollView(
+              child: Text(
+                content,
+                style: const TextStyle(fontSize: 13, height: 1.5),
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Close'),
+            ),
+          ],
+        ),
+      );
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not load $title')),
+        );
+      }
+    }
   }
 
   String _expiryLabel(Duration? expiry) {

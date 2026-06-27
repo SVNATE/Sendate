@@ -79,6 +79,7 @@ flutter:
   assets:
     - assets/icons/
     - assets/images/
+    - assets/docs/
 
 dependency_overrides:
   share_handler_ios: 0.0.14
