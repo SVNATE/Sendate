@@ -13,6 +13,7 @@ import '../../../../shared/providers/settings_provider.dart';
 import '../../../../shared/widgets/help_guide_sheet.dart';
 import '../widgets/receive_mode_selector.dart';
 import '../widgets/device_card_widget.dart';
+import '../../../../core/constants/app_constants.dart';
 
 enum ReceiveMode { public, trustedOnly, hidden }
 
@@ -162,8 +163,9 @@ class _ReceiveScreenState extends ConsumerState<ReceiveScreen> {
           'Invisible — share your QR or code to connect',
       };
 
-  void _showQRDialog(BuildContext context, DeviceModel device) {
-    final qrData = 'sendate://${device.id}/${device.name}/${device.fingerprint}';
+  void _showQRDialog(BuildContext context, DeviceModel device) async {
+    final ip = await ref.read(networkServiceProvider).getLocalIp() ?? '';
+    final qrData = 'sendate://${device.id}/${device.name}/${device.fingerprint}/$ip/${AppConstants.transferPort}';
 
     showDialog(
       context: context,

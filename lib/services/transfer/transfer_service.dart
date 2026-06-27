@@ -13,6 +13,7 @@ import '../../shared/models/device_model.dart';
 import '../../shared/models/transfer_model.dart';
 import '../conversion/conversion_service.dart';
 import '../security/encryption_service.dart';
+import 'package:wakelock_plus/wakelock_plus.dart';
 
 // ---------------------------------------------------------------------------
 // Transfer session — holds per-transfer control state (pause / cancel).
@@ -781,7 +782,22 @@ class TransferService {
     return t;
   }
 
-  void _emit(TransferModel t) => _transferController.add(t);
+  void _emit(TransferModel t) {
+    _transferController.add(t);
+    _updateWakelock();
+  }
+
+  void _updateWakelock() {
+    try {
+      if (_activeTransfers.isNotEmpty) {
+        WakelockPlus.enable();
+      } else {
+        WakelockPlus.disable();
+      }
+    } catch (e) {
+      _log.debug('Wakelock update failed: $e');
+    }
+  }
 
   // BUG-11 FIX: async-safe unique path with a simple in-process lock to
   // prevent TOCTOU races between concurrent incoming transfers.

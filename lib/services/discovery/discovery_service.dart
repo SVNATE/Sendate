@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'package:flutter/services.dart';
 
 import '../../core/constants/app_constants.dart';
 import '../../core/utils/logger.dart';
@@ -25,6 +26,7 @@ class DiscoveryService {
   DeviceModel? _localDevice;
   String? _localIp;
   final NetworkService _networkService = NetworkService();
+  static const MethodChannel _multicastChannel = MethodChannel('com.svnate.sendate/multicast');
 
   static const _multicastGroup = '224.0.0.167';
   static const _staleTimeout = Duration(seconds: 15);
@@ -41,6 +43,14 @@ class DiscoveryService {
     _localDevice = localDevice;
     _localIp = localIp;
     _isRunning = true;
+
+    if (Platform.isAndroid) {
+      try {
+        await _multicastChannel.invokeMethod('acquire');
+      } catch (e) {
+        _log.debug('Failed to acquire multicast lock: $e');
+      }
+    }
 
     // Get ALL local IPs (covers hotspot + wifi client interfaces)
     final allIps = await _networkService.getAllLocalIps();
@@ -138,6 +148,14 @@ class DiscoveryService {
     _multicastSocket = null;
     _discovered.clear();
     _devicesController.add([]);
+    
+    if (Platform.isAndroid) {
+      try {
+        await _multicastChannel.invokeMethod('release');
+      } catch (e) {
+        _log.debug('Failed to release multicast lock: $e');
+      }
+    }
   }
 
   /// Restart discovery sockets when network interface changes (WiFi switch, hotspot toggle).

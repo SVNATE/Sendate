@@ -85,7 +85,7 @@ class _QrScanScreenState extends ConsumerState<QrScanScreen> {
     _hasScanned = true;
     _scannerController.stop();
 
-    // Parse: sendate://deviceId/name/fingerprint
+    // Parse: sendate://deviceId/name/fingerprint/[ip]/[port]
     final parts = code.replaceFirst('sendate://', '').split('/');
     if (parts.length < 3) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -101,6 +101,8 @@ class _QrScanScreenState extends ConsumerState<QrScanScreen> {
       deviceType: DeviceType.unknown,
       fingerprint: parts[2],
       trustLevel: TrustLevel.known,
+      ipAddress: parts.length > 3 ? parts[3] : null,
+      port: parts.length > 4 ? int.tryParse(parts[4]) : null,
       lastSeen: DateTime.now(),
     );
 

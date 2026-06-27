@@ -23,6 +23,7 @@ import androidx.core.content.ContextCompat
 import io.flutter.embedding.android.FlutterFragmentActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
+import android.net.wifi.WifiManager
 import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
@@ -41,6 +42,7 @@ class MainActivity : FlutterFragmentActivity() {
     private val SERVICE_CHANNEL = "com.svnate.sendate/foreground_service"
     private val NOTIFICATION_LISTENER_CHANNEL = "com.svnate.sendate/notification_listener"
     private val OPEN_FILES_CHANNEL = "com.svnate.sendate/open_files"
+    private val MULTICAST_CHANNEL = "com.svnate.sendate/multicast"
 
     private val BT_SPP_UUID: UUID =
         UUID.fromString("00001101-0000-1000-8000-00805F9B34FB") // Standard SPP UUID
@@ -59,6 +61,8 @@ class MainActivity : FlutterFragmentActivity() {
     private var wifiP2pManager: WifiP2pManager? = null
     private var wifiP2pChannel: WifiP2pManager.Channel? = null
     private var openFilesChannel: MethodChannel? = null
+    private var multicastChannel: MethodChannel? = null
+    private var multicastLock: WifiManager.MulticastLock? = null
 
     private val btReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
@@ -180,6 +184,31 @@ class MainActivity : FlutterFragmentActivity() {
                 "getClipboard" -> {
                     val text = clipboardManager.primaryClip?.getItemAt(0)?.text?.toString() ?: ""
                     result.success(text)
+                }
+                else -> result.notImplemented()
+            }
+        }
+
+        // --- Multicast Lock ---
+        multicastChannel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, MULTICAST_CHANNEL)
+        multicastChannel?.setMethodCallHandler { call, result ->
+            when (call.method) {
+                "acquire" -> {
+                    if (multicastLock == null) {
+                        val wifiManager = applicationContext.getSystemService(Context.WIFI_SERVICE) as? WifiManager
+                        multicastLock = wifiManager?.createMulticastLock("SendateMulticastLock")
+                        multicastLock?.setReferenceCounted(true)
+                    }
+                    multicastLock?.let {
+                        if (!it.isHeld) it.acquire()
+                    }
+                    result.success(true)
+                }
+                "release" -> {
+                    multicastLock?.let {
+                        if (it.isHeld) it.release()
+                    }
+                    result.success(true)
                 }
                 else -> result.notImplemented()
             }
