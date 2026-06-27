@@ -5,6 +5,7 @@
 list(APPEND FLUTTER_PLUGIN_LIST
   connectivity_plus
   local_auth_windows
+  nsd_windows
   permission_handler_windows
   screen_retriever_windows
   share_plus

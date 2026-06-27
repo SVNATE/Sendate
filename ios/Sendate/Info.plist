@@ -109,7 +109,7 @@
 		<string>Sendate needs access to your local network to discover and connect to your other devices for file sharing.</string>
 		<key>NSBonjourServices</key>
 		<array>
-			<string>_http._tcp.</string>
+			<string>_sendate._tcp.</string>
 		</array>
 	</dict>
 </plist>
