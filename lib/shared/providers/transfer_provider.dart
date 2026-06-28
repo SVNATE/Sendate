@@ -105,6 +105,17 @@ class TransferHistoryNotifier extends StateNotifier<List<TransferModel>> {
     _saveToHive(transfer);
   }
 
+  void updateRecord(String id, TransferModel Function(TransferModel) update) {
+    state = state.map((t) {
+      if (t.id == id) {
+        final updated = update(t);
+        _saveToHive(updated);
+        return updated;
+      }
+      return t;
+    }).toList();
+  }
+
   void removeRecord(String id) {
     state = state.where((t) => t.id != id).toList();
     _box.delete(id);

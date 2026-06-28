@@ -111,3 +111,39 @@ String _formatBytes(int bytes) {
   }
   return '${(bytes / (1024 * 1024 * 1024)).toStringAsFixed(2)} GB';
 }
+
+/// Show a prompt to ask the user if they want to convert a received .mov file to .mp4
+Future<bool> showConversionPrompt(String fileName) async {
+  final context = globalNavigatorKey.currentContext;
+
+  final lifecycle = SchedulerBinding.instance.lifecycleState;
+  final isForegrounded = lifecycle == AppLifecycleState.resumed;
+
+  if (context != null && isForegrounded) {
+    final result = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Incompatible Format'),
+        content: Text(
+          "You received '$fileName', which is a .mov file. Older Android devices may not be able to play this format.\n\n"
+          "Do you want to convert this .mov file to .mp4?"
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('No'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Convert'),
+          ),
+        ],
+      ),
+    );
+    return result ?? false;
+  }
+
+  // If app is not foregrounded, we default to false (or could use a notification, but for now false to avoid blocking)
+  return false;
+}

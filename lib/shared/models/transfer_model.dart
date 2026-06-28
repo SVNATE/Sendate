@@ -55,7 +55,9 @@ class TransferModel {
   });
 
   TransferModel copyWith({
+    String? fileName,
     String? filePath,
+    String? mimeType,
     TransferState? state,
     double? progress,
     int? bytesTransferred,
@@ -67,10 +69,10 @@ class TransferModel {
   }) {
     return TransferModel(
       id: id,
-      fileName: fileName,
+      fileName: fileName ?? this.fileName,
       filePath: filePath ?? this.filePath,
       fileSize: fileSize,
-      mimeType: mimeType,
+      mimeType: mimeType ?? this.mimeType,
       deviceId: deviceId,
       deviceName: deviceName,
       direction: direction,

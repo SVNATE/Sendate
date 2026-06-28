@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -12,6 +13,8 @@ import '../models/device_model.dart';
 import '../models/transfer_model.dart';
 import 'settings_provider.dart';
 import 'transfer_provider.dart';
+import '../../core/utils/global_navigator.dart';
+import '../../services/conversion/conversion_service.dart';
 
 // ---------------------------------------------------------------------------
 // Transfer service singleton
@@ -34,10 +37,56 @@ final transferServiceProvider = Provider<TransferService>((ref) {
   }
 
   // Wire receive-side notification — fires when a file is fully saved.
-  service.onFileReceived = (transfer, savedPath) {
+  service.onFileReceived = (transfer, savedPath) async {
+    String finalPath = savedPath;
+    String finalFileName = transfer.fileName;
+
+    if (Platform.isAndroid && savedPath.toLowerCase().endsWith('.mov')) {
+      final autoConvert = ref.read(autoConvertProvider);
+      bool shouldConvert = autoConvert;
+
+      if (!shouldConvert) {
+        shouldConvert = await showConversionPrompt(transfer.fileName);
+      }
+
+      if (shouldConvert) {
+        try {
+          final conversionService = ConversionService();
+          final newPath = await conversionService.convertFile(
+            inputPath: savedPath,
+            targetMimeType: 'video/mp4',
+            targetExtension: 'mp4',
+          );
+
+          if (newPath != savedPath) {
+            finalPath = newPath;
+            finalFileName = finalPath.split('/').last;
+
+            // Delete original .mov file
+            final originalFile = File(savedPath);
+            if (await originalFile.exists()) {
+              await originalFile.delete();
+            }
+
+            // Update history
+            ref.read(transferHistoryProvider.notifier).updateRecord(
+              transfer.id,
+              (t) => t.copyWith(
+                filePath: finalPath,
+                fileName: finalFileName,
+                mimeType: 'video/mp4',
+              ),
+            );
+          }
+        } catch (e) {
+          debugPrint('[TransferServiceProvider] Conversion failed: $e');
+        }
+      }
+    }
+
     NotificationService.showFileReceived(
-      fileName: transfer.fileName,
-      filePath: savedPath,
+      fileName: finalFileName,
+      filePath: finalPath,
       senderName: transfer.deviceName,
       fileSize: transfer.bytesTransferred,
     );
