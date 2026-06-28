@@ -43,7 +43,7 @@ void showHelpGuide(BuildContext context, {required String title, required List<H
           Expanded(
             child: ListView.separated(
               controller: scrollController,
-              padding: const EdgeInsets.fromLTRB(24, 8, 24, 32),
+              padding: const EdgeInsets.fromLTRB(24, 8, 24, 120),
               itemCount: items.length,
               separatorBuilder: (_, i) => const Gap(16),
               itemBuilder: (context, index) => _HelpItemTile(item: items[index]),

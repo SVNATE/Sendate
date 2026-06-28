@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:gap/gap.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 
 import '../../../../shared/models/transfer_model.dart';
@@ -17,202 +18,255 @@ class HistoryScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final history = ref.watch(transferHistoryProvider);
+    final colorScheme = Theme.of(context).colorScheme;
 
     return SafeArea(
-      child: CustomScrollView(
-        slivers: [
-          SliverAppBar(
-            floating: true,
-            title: const Text('History'),
-            actions: [
-              IconButton(
-                onPressed: () => showHelpGuide(context, title: 'History Help', items: historyGuideItems),
-                icon: Icon(LucideIcons.helpCircle),
-                tooltip: 'Help',
-              ),
-              if (history.isNotEmpty)
-                IconButton(
-                  onPressed: () => _confirmClear(context, ref),
-                  icon: Icon(LucideIcons.trash2),
-                  tooltip: 'Clear history',
+      child: Column(
+        children: [
+          // Header
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Expanded(
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      'History',
+                      style: GoogleFonts.outfit(
+                        fontSize: 48,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: -1.5,
+                        color: colorScheme.onSurface,
+                      ),
+                    ),
+                  ),
                 ),
-            ],
-          ),
-          if (history.isEmpty)
-            SliverFillRemaining(child: _EmptyHistory())
-          else
-            SliverPadding(
-              padding: const EdgeInsets.symmetric(horizontal: 20),
-              sliver: SliverList.builder(
-                itemCount: history.length,
-                itemBuilder: (context, index) => _HistoryTile(
-                  transfer: history[index],
-                  onTap: () => _showDetail(context, ref, history[index]),
-                  onDelete: () {
-                    ref
-                        .read(transferHistoryProvider.notifier)
-                        .removeRecord(history[index].id);
-                  },
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    IconButton(
+                      onPressed: () => showHelpGuide(context, title: 'History Help', items: historyGuideItems),
+                      icon: Icon(LucideIcons.helpCircle, color: colorScheme.onSurfaceVariant),
+                      tooltip: 'Help',
+                    ),
+                    if (history.isNotEmpty)
+                      IconButton(
+                        onPressed: () => _confirmClear(context, ref),
+                        icon: Icon(LucideIcons.trash2, color: colorScheme.onSurfaceVariant),
+                        tooltip: 'Clear history',
+                      ),
+                  ],
                 ),
-              ),
+              ],
             ),
+          ),
+          const Gap(16),
+
+          // Content
+          Expanded(
+            child: history.isEmpty
+                ? const _EmptyHistory()
+                : ListView.builder(
+                    padding: const EdgeInsets.fromLTRB(24, 8, 24, 120),
+                    itemCount: history.length,
+                    itemBuilder: (context, index) => _HistoryTile(
+                      transfer: history[index],
+                      onTap: () => _showDetail(context, ref, history[index]),
+                      onDelete: () {
+                        ref.read(transferHistoryProvider.notifier).removeRecord(history[index].id);
+                      },
+                    ),
+                  ),
+          ),
         ],
       ),
     );
   }
 
   void _confirmClear(BuildContext context, WidgetRef ref) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Clear History'),
-        content: const Text(
-          'This will remove all transfer records. Files on disk are not affected.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () {
-              ref.read(transferHistoryProvider.notifier).clear();
-              Navigator.pop(context);
-            },
-            child: const Text('Clear'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _showDetail(BuildContext context, WidgetRef ref, TransferModel transfer) {
-    final bool canResend = transfer.direction == TransferDirection.sent &&
-        (transfer.state == TransferState.failed ||
-            transfer.state == TransferState.cancelled) &&
-        File(transfer.filePath).existsSync();
-
-    final bool failedReceive = transfer.direction == TransferDirection.received &&
-        (transfer.state == TransferState.failed ||
-            transfer.state == TransferState.cancelled);
-
     showModalBottomSheet(
       context: context,
-      builder: (ctx) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (context) => SafeArea(
+        child: SingleChildScrollView(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
               Text(
-                transfer.fileName,
-                style: Theme.of(ctx).textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.w600,
-                    ),
-              ),
-              const Gap(16),
-              _DetailRow('Device', transfer.deviceName),
-              _DetailRow('Size', _formatBytes(transfer.fileSize)),
-              _DetailRow(
-                'Direction',
-                transfer.direction == TransferDirection.sent
-                    ? 'Sent'
-                    : 'Received',
-              ),
-              _DetailRow('Status', transfer.state.name),
-              if (transfer.speed != null)
-                _DetailRow('Speed', '${_formatBytes(transfer.speed!)}/s'),
-              if (transfer.duration != null)
-                _DetailRow(
-                  'Duration',
-                  '${(transfer.duration! / 1000).toStringAsFixed(1)}s',
+                'Clear History?',
+                style: GoogleFonts.outfit(
+                  fontSize: 28,
+                  fontWeight: FontWeight.w800,
                 ),
-              if (transfer.errorMessage != null) ...
-                [_DetailRow('Error', transfer.errorMessage!)],
-              const Gap(16),
-              if (canResend) ...
-                [
-                  SizedBox(
-                    width: double.infinity,
-                    child: FilledButton.icon(
-                      icon: const Icon(LucideIcons.refreshCw, size: 16),
-                      label: const Text('Resend'),
-                      onPressed: () async {
-                        Navigator.pop(ctx);
-                        final allDevices = ref.read(allNearbyDevicesProvider);
-                        final target = allDevices
-                            .where((d) => d.id == transfer.deviceId)
-                            .firstOrNull;
-                        if (target == null) {
-                          if (context.mounted) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: Text(
-                                    '${transfer.deviceName} is not available'),
-                              ),
-                            );
-                          }
-                          return;
-                        }
-                        ref.read(transferControllerProvider).sendFiles(
-                              filePaths: [transfer.filePath],
-                              target: target,
-                            );
+              ),
+              const Gap(12),
+              Text(
+                'This will permanently remove all transfer records from this device. Files on disk are not affected.',
+                style: GoogleFonts.plusJakartaSans(
+                  fontSize: 16,
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+              ),
+              const Gap(32),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      style: OutlinedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                      ),
+                      onPressed: () => Navigator.pop(context),
+                      child: Text('Cancel', style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w600)),
+                    ),
+                  ),
+                  const Gap(16),
+                  Expanded(
+                    child: FilledButton(
+                      style: FilledButton.styleFrom(
+                        backgroundColor: Theme.of(context).colorScheme.error,
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                      ),
+                      onPressed: () {
+                        ref.read(transferHistoryProvider.notifier).clear();
+                        Navigator.pop(context);
                       },
+                      child: Text('Clear', style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w600, color: Theme.of(context).colorScheme.onError)),
                     ),
                   ),
-                  const Gap(8),
-                ]
-              else if (failedReceive) ...
-                [
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 12, vertical: 10),
-                    decoration: BoxDecoration(
-                      color: Theme.of(ctx)
-                          .colorScheme
-                          .surfaceContainerHighest,
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Row(
-                      children: [
-                        Icon(LucideIcons.info,
-                            size: 14,
-                            color: Theme.of(ctx)
-                                .colorScheme
-                                .onSurfaceVariant),
-                        const Gap(8),
-                        Expanded(
-                          child: Text(
-                            'Ask ${transfer.deviceName} to resend this file.',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: Theme.of(ctx)
-                                  .colorScheme
-                                  .onSurfaceVariant,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const Gap(8),
                 ],
-              SizedBox(
-                width: double.infinity,
-                child: OutlinedButton(
-                  onPressed: () => Navigator.pop(ctx),
-                  child: const Text('Close'),
-                ),
               ),
             ],
           ),
         ),
       ),
-    );
-  }
+    ),
+  );
+}
+
+  void _showDetail(BuildContext context, WidgetRef ref, TransferModel transfer) {
+    final bool canResend = transfer.direction == TransferDirection.sent &&
+        (transfer.state == TransferState.failed || transfer.state == TransferState.cancelled) &&
+        File(transfer.filePath).existsSync();
+
+    final bool failedReceive = transfer.direction == TransferDirection.received &&
+        (transfer.state == TransferState.failed || transfer.state == TransferState.cancelled);
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: SingleChildScrollView(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 32, horizontal: 24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    transfer.fileName,
+                    style: GoogleFonts.outfit(
+                      fontSize: 24,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              const Gap(24),
+              _DetailRow('Device', transfer.deviceName),
+              _DetailRow('Size', _formatBytes(transfer.fileSize)),
+              _DetailRow('Direction', transfer.direction == TransferDirection.sent ? 'Sent' : 'Received'),
+              _DetailRow('Status', transfer.state.name),
+              if (transfer.speed != null) _DetailRow('Speed', '${_formatBytes(transfer.speed!)}/s'),
+              if (transfer.duration != null) _DetailRow('Duration', '${(transfer.duration! / 1000).toStringAsFixed(1)}s'),
+              if (transfer.errorMessage != null) ...[
+                const Gap(8),
+                _DetailRow('Error', transfer.errorMessage!, isError: true),
+              ],
+              const Gap(32),
+              if (canResend) ...[
+                FilledButton.icon(
+                  icon: const Icon(LucideIcons.refreshCw, size: 20),
+                  label: Text('Resend', style: GoogleFonts.plusJakartaSans(fontSize: 16, fontWeight: FontWeight.w600)),
+                  style: FilledButton.styleFrom(
+                    minimumSize: const Size(double.infinity, 56),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                  ),
+                  onPressed: () async {
+                    Navigator.pop(ctx);
+                    final allDevices = ref.read(allNearbyDevicesProvider);
+                    final target = allDevices.where((d) => d.id == transfer.deviceId).firstOrNull;
+                    if (target == null) {
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text('${transfer.deviceName} is not nearby')),
+                        );
+                      }
+                      return;
+                    }
+                    ref.read(transferControllerProvider).sendFiles(
+                          filePaths: [transfer.filePath],
+                          target: target,
+                        );
+                  },
+                ),
+                const Gap(16),
+              ] else if (failedReceive) ...[
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+                  decoration: BoxDecoration(
+                    color: Theme.of(ctx).colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(LucideIcons.info, size: 20, color: Theme.of(ctx).colorScheme.onSurfaceVariant),
+                      const Gap(12),
+                      Expanded(
+                        child: Text(
+                          'Ask ${transfer.deviceName} to resend this file.',
+                          style: GoogleFonts.plusJakartaSans(
+                            fontSize: 14,
+                            color: Theme.of(ctx).colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const Gap(16),
+              ],
+              OutlinedButton(
+                onPressed: () => Navigator.pop(ctx),
+                style: OutlinedButton.styleFrom(
+                  minimumSize: const Size(double.infinity, 56),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                ),
+                child: Text('Close', style: GoogleFonts.plusJakartaSans(fontSize: 16, fontWeight: FontWeight.w600)),
+              ),
+            ],
+          ),
+        ),
+      ),
+    ),
+  );
+}
 
   String _formatBytes(int bytes) {
     if (bytes < 1024) return '$bytes B';
@@ -227,31 +281,37 @@ class HistoryScreen extends ConsumerWidget {
 class _DetailRow extends StatelessWidget {
   final String label;
   final String value;
+  final bool isError;
 
-  const _DetailRow(this.label, this.value);
+  const _DetailRow(this.label, this.value, {this.isError = false});
 
   @override
   Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6),
+      padding: const EdgeInsets.symmetric(vertical: 8),
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           SizedBox(
-            width: 80,
+            width: 100,
             child: Text(
               label,
-              style: TextStyle(
-                fontSize: 13,
-                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              style: GoogleFonts.plusJakartaSans(
+                fontSize: 15,
+                fontWeight: FontWeight.w600,
+                color: colorScheme.onSurfaceVariant,
               ),
             ),
           ),
           Expanded(
             child: Text(
               value,
-              style: const TextStyle(
-                fontSize: 13,
+              style: GoogleFonts.plusJakartaSans(
+                fontSize: 15,
                 fontWeight: FontWeight.w500,
+                color: isError ? colorScheme.error : colorScheme.onSurface,
               ),
             ),
           ),
@@ -262,6 +322,8 @@ class _DetailRow extends StatelessWidget {
 }
 
 class _EmptyHistory extends StatelessWidget {
+  const _EmptyHistory();
+
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
@@ -272,22 +334,25 @@ class _EmptyHistory extends StatelessWidget {
         children: [
           Icon(
             LucideIcons.clock,
-            size: 56,
+            size: 80,
             color: colorScheme.onSurfaceVariant.withValues(alpha: 0.3),
           ),
-          const Gap(16),
+          const Gap(24),
           Text(
             'No transfers yet',
-            style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                  color: colorScheme.onSurfaceVariant,
-                ),
+            style: GoogleFonts.outfit(
+              fontSize: 24,
+              fontWeight: FontWeight.w700,
+              color: colorScheme.onSurface,
+            ),
           ),
-          const Gap(4),
+          const Gap(8),
           Text(
             'Your transfer history will appear here',
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: colorScheme.onSurfaceVariant.withValues(alpha: 0.7),
-                ),
+            style: GoogleFonts.plusJakartaSans(
+              fontSize: 16,
+              color: colorScheme.onSurfaceVariant,
+            ),
           ),
         ],
       ),
@@ -330,59 +395,64 @@ class _HistoryTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
 
-    return Dismissible(
-      key: Key(transfer.id),
-      direction: DismissDirection.endToStart,
-      onDismissed: (_) => onDelete(),
-      background: Container(
-        alignment: Alignment.centerRight,
-        padding: const EdgeInsets.only(right: 20),
-        decoration: BoxDecoration(
-          color: Colors.red.withValues(alpha: 0.1),
-          borderRadius: BorderRadius.circular(16),
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Dismissible(
+        key: Key(transfer.id),
+        direction: DismissDirection.endToStart,
+        onDismissed: (_) => onDelete(),
+        background: Container(
+          alignment: Alignment.centerRight,
+          padding: const EdgeInsets.only(right: 20),
+          decoration: BoxDecoration(
+            color: colorScheme.error.withValues(alpha: 0.1),
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: Icon(LucideIcons.trash2, color: colorScheme.error),
         ),
-        child: const Icon(LucideIcons.trash2, color: Colors.red),
-      ),
-      child: Card(
-        margin: const EdgeInsets.only(bottom: 8),
-        child: ListTile(
-          contentPadding:
-              const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-          leading: Container(
-            width: 44,
-            height: 44,
-            decoration: BoxDecoration(
-              color: _stateColor(context).withValues(alpha: 0.1),
-              borderRadius: BorderRadius.circular(12),
+        child: Material(
+          color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.2),
+          borderRadius: BorderRadius.circular(20),
+          clipBehavior: Clip.antiAlias,
+          child: ListTile(
+            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            leading: Container(
+              width: 48,
+              height: 48,
+              decoration: BoxDecoration(
+                color: _stateColor(context).withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: Icon(
+                _directionIcon,
+                color: _stateColor(context),
+                size: 24,
+              ),
             ),
-            child: Icon(
-              _directionIcon,
-              color: _stateColor(context),
+            title: Text(
+              transfer.fileName,
+              style: GoogleFonts.outfit(
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+                color: colorScheme.onSurface,
+              ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+            subtitle: Text(
+              '${transfer.deviceName} • ${_formatBytes(transfer.fileSize)}',
+              style: GoogleFonts.plusJakartaSans(
+                fontSize: 13,
+                color: colorScheme.onSurfaceVariant,
+              ),
+            ),
+            trailing: Icon(
+              LucideIcons.chevronRight,
               size: 20,
-            ),
-          ),
-          title: Text(
-            transfer.fileName,
-            style:
-                const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          ),
-          subtitle: Text(
-            '${transfer.deviceName} • ${_formatBytes(transfer.fileSize)}',
-            style: TextStyle(
-              fontSize: 12,
               color: colorScheme.onSurfaceVariant,
             ),
+            onTap: onTap,
           ),
-          trailing: Icon(
-            LucideIcons.chevronRight,
-            size: 16,
-            color: colorScheme.onSurfaceVariant,
-          ),
-          shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16)),
-          onTap: onTap,
         ),
       ),
     );

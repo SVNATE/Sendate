@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:gap/gap.dart';
 import 'package:go_router/go_router.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 
 import '../../../../shared/models/device_model.dart';
@@ -27,10 +28,15 @@ class _SendScreenState extends ConsumerState<SendScreen> {
   @override
   void initState() {
     super.initState();
-    // Start all discovery methods when Send screen opens
     WidgetsBinding.instance.addPostFrameCallback((_) {
       ref.read(discoveryControllerProvider).startAll();
     });
+  }
+
+  String _formatSize(int bytes) {
+    if (bytes < 1024) return '$bytes B';
+    if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
+    return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
   }
 
   @override
@@ -44,153 +50,177 @@ class _SendScreenState extends ConsumerState<SendScreen> {
     return SafeArea(
       child: Stack(
         children: [
-          CustomScrollView(
-        slivers: [
-          SliverAppBar(
-            floating: true,
-            title: const Text('Send'),
-            actions: [
-              // Load saved selection
-              IconButton(
-                onPressed: () => _showSavedSelections(context),
-                icon: const Icon(LucideIcons.bookmark),
-                tooltip: 'Saved Selections',
-              ),
-              // Broadcast mode toggle
-              IconButton(
-                onPressed: () {
-                  ref.read(broadcastModeProvider.notifier).state =
-                      !broadcastMode;
-                  ref.read(selectedDeviceIdsProvider.notifier).state = {};
-                },
-                icon: Icon(
-                  LucideIcons.radio,
-                  color: broadcastMode ? colorScheme.primary : null,
-                ),
-                tooltip: broadcastMode ? 'Exit broadcast mode' : 'Broadcast to multiple devices',
-              ),
-              IconButton(
-                onPressed: () => showHelpGuide(context, title: 'Send Help', items: sendGuideItems),
-                icon: Icon(LucideIcons.helpCircle),
-                tooltip: 'Help',
-              ),
-            ],
-          ),
-          SliverPadding(
-            padding: const EdgeInsets.symmetric(horizontal: 20),
-            sliver: SliverList.list(
-              children: [
-                const Gap(8),
-                // Content type selector
-                _ContentTypeGrid(
-                  onPickPhotos: () => _pickFiles(FileType.image),
-                  onPickVideos: () => _pickFiles(FileType.video),
-                  onPickFiles: () => _pickFiles(FileType.any),
-                  onPickFolder: _pickFolder,
-                  onClipboard: _sendClipboard,
-                ),
-                // Selected files preview
-                if (selectedFiles.isNotEmpty) ...[
-                  const Gap(16),
-                  _SelectedFilesPreview(
-                    files: selectedFiles,
-                    onClear: () => ref
-                        .read(selectedFilesProvider.notifier)
-                        .state = [],
-                    onSave: () => _saveSelection(context, selectedFiles),
-                  ),
-                ],
-                const Gap(28),
-                // Nearby devices
-                Row(
-                  children: [
-                    Text(
-                      'Nearby Devices',
-                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                            fontWeight: FontWeight.w600,
-                          ),
-                    ),
-                    if (nearbyDevices.isNotEmpty) ...[
-                      const Gap(8),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 8, vertical: 2),
-                        decoration: BoxDecoration(
-                          color: colorScheme.primaryContainer
-                              .withValues(alpha: 0.5),
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        child: Text(
-                          '${nearbyDevices.length}',
-                          style: TextStyle(
-                            fontSize: 11,
-                            fontWeight: FontWeight.w600,
-                            color: colorScheme.primary,
-                          ),
+          ListView(
+            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+            children: [
+              // Header
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Expanded(
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        'Send',
+                        style: GoogleFonts.outfit(
+                          fontSize: 48,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: -1.5,
+                          color: colorScheme.onSurface,
                         ),
                       ),
-                    ],
-                    const Spacer(),
-                    TextButton.icon(
-                      onPressed: () =>
-                          ref.read(discoveryControllerProvider).restartDiscovery(),
-                      icon: Icon(LucideIcons.refreshCw, size: 14),
-                      label: const Text('Scan'),
-                    ),
-                  ],
-                ),
-                const Gap(12),
-                if (nearbyDevices.isEmpty)
-                  _EmptyDevicesState(
-                    isDiscovering: ref.watch(discoveryActiveProvider),
-                  )
-                else
-                  ...nearbyDevices.map(
-                    (device) => broadcastMode
-                        ? _BroadcastDeviceTile(
-                            device: device,
-                            isSelected:
-                                selectedDeviceIds.contains(device.id),
-                            onToggle: () {
-                              final ids = Set<String>.from(
-                                  ref.read(selectedDeviceIdsProvider));
-                              if (ids.contains(device.id)) {
-                                ids.remove(device.id);
-                              } else {
-                                ids.add(device.id);
-                              }
-                              ref
-                                  .read(selectedDeviceIdsProvider.notifier)
-                                  .state = ids;
-                            },
-                          )
-                        : _NearbyDeviceTile(
-                      device: device,
-                      hasFiles: selectedFiles.isNotEmpty,
-                      onTap: () => _sendToDevice(device),
                     ),
                   ),
-                Gap(broadcastMode ? 80 : 24),
+                  Row(
+                    children: [
+                      IconButton(
+                        onPressed: () => _showSavedSelections(context),
+                        icon: Icon(LucideIcons.bookmark, color: colorScheme.onSurfaceVariant),
+                        tooltip: 'Saved Selections',
+                      ),
+                      IconButton(
+                        onPressed: () {
+                          ref.read(broadcastModeProvider.notifier).state = !broadcastMode;
+                          ref.read(selectedDeviceIdsProvider.notifier).state = {};
+                        },
+                        icon: Icon(
+                          LucideIcons.radio,
+                          color: broadcastMode ? colorScheme.primary : colorScheme.onSurfaceVariant,
+                        ),
+                        tooltip: broadcastMode ? 'Exit broadcast mode' : 'Broadcast to multiple devices',
+                      ),
+                      IconButton(
+                        onPressed: () => showHelpGuide(context, title: 'Send Help', items: sendGuideItems),
+                        icon: Icon(LucideIcons.helpCircle, color: colorScheme.onSurfaceVariant),
+                        tooltip: 'Help',
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+              const Gap(32),
+
+              // Content type selector
+              Text(
+                'Select payload',
+                style: GoogleFonts.outfit(
+                  fontSize: 20,
+                  fontWeight: FontWeight.w700,
+                  color: colorScheme.onSurface,
+                ),
+              ),
+              const Gap(16),
+              _ContentTypeGrid(
+                onPickPhotos: () => _pickFiles(FileType.image),
+                onPickVideos: () => _pickFiles(FileType.video),
+                onPickFiles: () => _pickFiles(FileType.any),
+                onPickFolder: _pickFolder,
+                onClipboard: _sendClipboard,
+              ),
+
+              // Selected files preview
+              if (selectedFiles.isNotEmpty) ...[
+                const Gap(24),
+                _SelectedFilesPreview(
+                  files: selectedFiles,
+                  onClear: () => ref.read(selectedFilesProvider.notifier).state = [],
+                  onSave: () => _saveSelection(context, selectedFiles),
+                ),
               ],
-            ),
+              
+              const Gap(48),
+
+              // Nearby devices
+              Row(
+                children: [
+                  Text(
+                    'Nearby Devices',
+                    style: GoogleFonts.outfit(
+                      fontSize: 20,
+                      fontWeight: FontWeight.w700,
+                      color: colorScheme.onSurface,
+                    ),
+                  ),
+                  if (nearbyDevices.isNotEmpty) ...[
+                    const Gap(8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: colorScheme.primaryContainer.withValues(alpha: 0.5),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Text(
+                        '${nearbyDevices.length}',
+                        style: GoogleFonts.plusJakartaSans(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                          color: colorScheme.primary,
+                        ),
+                      ),
+                    ),
+                  ],
+                  const Spacer(),
+                  IconButton(
+                    onPressed: () => ref.read(discoveryControllerProvider).restartDiscovery(),
+                    icon: Icon(LucideIcons.refreshCw, size: 20, color: colorScheme.primary),
+                    tooltip: 'Scan again',
+                  ),
+                ],
+              ),
+              const Gap(16),
+
+              if (nearbyDevices.isEmpty)
+                _EmptyDevicesState(isDiscovering: ref.watch(discoveryActiveProvider))
+              else
+                ...nearbyDevices.map(
+                  (device) => broadcastMode
+                      ? _BroadcastDeviceTile(
+                          device: device,
+                          isSelected: selectedDeviceIds.contains(device.id),
+                          onToggle: () {
+                            final ids = Set<String>.from(ref.read(selectedDeviceIdsProvider));
+                            if (ids.contains(device.id)) {
+                              ids.remove(device.id);
+                            } else {
+                              ids.add(device.id);
+                            }
+                            ref.read(selectedDeviceIdsProvider.notifier).state = ids;
+                          },
+                        )
+                      : _NearbyDeviceTile(
+                          device: device,
+                          hasFiles: selectedFiles.isNotEmpty,
+                          onTap: () => _sendToDevice(device),
+                        ),
+                ),
+              Gap(broadcastMode ? 180 : 120), // Extra padding to clear floating nav bar
+            ],
           ),
-        ],
-      ),
+
           // Broadcast send button (floating at bottom)
           if (broadcastMode && selectedDeviceIds.isNotEmpty && selectedFiles.isNotEmpty)
             Positioned(
-              left: 16,
-              right: 16,
-              bottom: 16,
+              left: 24,
+              right: 24,
+              bottom: 24,
               child: SafeArea(
                 child: FilledButton.icon(
                   onPressed: () => _broadcastSend(nearbyDevices, selectedDeviceIds, selectedFiles),
-                  icon: const Icon(LucideIcons.radio),
-                  label: Text(
-                    'Send to ${selectedDeviceIds.length} device${selectedDeviceIds.length == 1 ? '' : 's'}',
+                  icon: const Icon(LucideIcons.radio, size: 20),
+                  label: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Text(
+                      'Broadcast to ${selectedDeviceIds.length} device${selectedDeviceIds.length == 1 ? '' : 's'}',
+                      style: GoogleFonts.plusJakartaSans(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
                   ),
                   style: FilledButton.styleFrom(
-                    minimumSize: const Size(double.infinity, 52),
+                    minimumSize: const Size(double.infinity, 56),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                   ),
                 ),
               ),
@@ -222,15 +252,15 @@ class _SendScreenState extends ConsumerState<SendScreen> {
   void _sendClipboard() {
     showModalBottomSheet(
       context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
       builder: (context) => const ClipboardSendDialog(),
     );
   }
 
-  /// Open the Save Selection dialog to name and persist the current file list.
-  Future<void> _saveSelection(
-      BuildContext context, List<PlatformFile> files) async {
-    final paths =
-        files.where((f) => f.path != null).map((f) => f.path!).toList();
+  Future<void> _saveSelection(BuildContext context, List<PlatformFile> files) async {
+    final paths = files.where((f) => f.path != null).map((f) => f.path!).toList();
     if (paths.isEmpty) return;
     await showDialog<bool>(
       context: context,
@@ -238,11 +268,13 @@ class _SendScreenState extends ConsumerState<SendScreen> {
     );
   }
 
-  /// Open the Saved Selections bottom sheet so the user can load a preset.
   void _showSavedSelections(BuildContext context) {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
       builder: (_) => const SavedSelectionsSheet(),
     );
   }
@@ -252,59 +284,88 @@ class _SendScreenState extends ConsumerState<SendScreen> {
     if (files.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Select files first'),
+          content: Text('Please select files first'),
           duration: Duration(seconds: 2),
         ),
       );
       return;
     }
 
-    final fileNames = files.map((f) => f.name).join(', ');
-    showDialog(
+    final totalSize = files.fold<int>(0, (s, f) => s + f.size);
+    final sizeStr = _formatSize(totalSize);
+
+    showModalBottomSheet(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Text('Send to ${device.name}'),
-        content: Text(
-          'Send ${files.length} file(s) to ${device.name}?\n\n$fileNames',
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (context) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Ready to send?',
+                style: GoogleFonts.outfit(
+                  fontSize: 28,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              const Gap(8),
+              Text(
+                'Sending ${files.length} file(s) ($sizeStr) to ${device.name}.',
+                style: GoogleFonts.plusJakartaSans(
+                  fontSize: 16,
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+              ),
+              const Gap(32),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      style: OutlinedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                      ),
+                      onPressed: () => Navigator.pop(context),
+                      child: Text('Cancel', style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w600)),
+                    ),
+                  ),
+                  const Gap(16),
+                  Expanded(
+                    child: FilledButton(
+                      style: FilledButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                      ),
+                      onPressed: () {
+                        Navigator.pop(context);
+                        _executeSend(device, files);
+                      },
+                      child: Text('Send Now', style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w600)),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () {
-              Navigator.pop(context);
-              _executeSend(device, files);
-            },
-            child: const Text('Send'),
-          ),
-        ],
       ),
     );
   }
 
   void _executeSend(DeviceModel device, List<PlatformFile> files) {
     final controller = ref.read(transferControllerProvider);
-    final filePaths = files
-        .where((f) => f.path != null)
-        .map((f) => f.path!)
-        .toList();
+    final filePaths = files.where((f) => f.path != null).map((f) => f.path!).toList();
 
-    if (filePaths.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No valid file paths')),
-      );
-      return;
-    }
+    if (filePaths.isEmpty) return;
 
-    // Clear selection before navigating
     ref.read(selectedFilesProvider.notifier).state = [];
-
-    // Start transfer in background (non-awaited)
     controller.sendFiles(filePaths: filePaths, target: device);
 
-    // Navigate to the dedicated progress screen
     context.push(
       '/transfer-progress',
       extra: TransferProgressArgs(
@@ -314,85 +375,29 @@ class _SendScreenState extends ConsumerState<SendScreen> {
     );
   }
 
-  /// Broadcast: send the same files to all selected devices in parallel.
-  void _broadcastSend(
-    List<DeviceModel> allDevices,
-    Set<String> selectedIds,
-    List<PlatformFile> files,
-  ) {
-    final targets =
-        allDevices.where((d) => selectedIds.contains(d.id)).toList();
+  void _broadcastSend(List<DeviceModel> allDevices, Set<String> selectedIds, List<PlatformFile> files) {
+    final targets = allDevices.where((d) => selectedIds.contains(d.id)).toList();
     if (targets.isEmpty) return;
 
-    final filePaths = files
-        .where((f) => f.path != null)
-        .map((f) => f.path!)
-        .toList();
+    final filePaths = files.where((f) => f.path != null).map((f) => f.path!).toList();
     if (filePaths.isEmpty) return;
 
     final controller = ref.read(transferControllerProvider);
     final deviceIds = targets.map((t) => t.id).toList();
-    final deviceNames = targets.map((t) => t.name).join(', ');
 
     for (final target in targets) {
       controller.sendFiles(filePaths: filePaths, target: target);
     }
 
-    // Reset state before navigating
     ref.read(selectedFilesProvider.notifier).state = [];
     ref.read(selectedDeviceIdsProvider.notifier).state = {};
     ref.read(broadcastModeProvider.notifier).state = false;
 
-    // Navigate to progress screen showing all broadcast targets
     context.push(
       '/transfer-progress',
       extra: TransferProgressArgs(
         deviceIds: deviceIds,
-        deviceName: targets.length == 1
-            ? targets.first.name
-            : '${targets.length} devices',
-      ),
-    );
-  }
-}
-
-class _BroadcastDeviceTile extends StatelessWidget {
-  final DeviceModel device;
-  final bool isSelected;
-  final VoidCallback onToggle;
-
-  const _BroadcastDeviceTile({
-    required this.device,
-    required this.isSelected,
-    required this.onToggle,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
-    return Card(
-      margin: const EdgeInsets.only(bottom: 8),
-      color: isSelected
-          ? colorScheme.primaryContainer.withValues(alpha: 0.3)
-          : null,
-      child: ListTile(
-        contentPadding:
-            const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        leading: DeviceAvatar(device: device, showTrustBadge: true),
-        title: Text(device.name,
-            style: const TextStyle(fontWeight: FontWeight.w600)),
-        subtitle: Text(
-          '${device.deviceType.name} • ${device.ipAddress ?? ""}',
-          style: TextStyle(fontSize: 12, color: colorScheme.onSurfaceVariant),
-        ),
-        trailing: Checkbox(
-          value: isSelected,
-          onChanged: (_) => onToggle(),
-          activeColor: colorScheme.primary,
-        ),
-        shape:
-            RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        onTap: onToggle,
+        deviceName: targets.length == 1 ? targets.first.name : '${targets.length} devices',
       ),
     );
   }
@@ -426,38 +431,36 @@ class _ContentTypeGrid extends StatelessWidget {
 
     final width = MediaQuery.of(context).size.width;
     final crossAxisCount = width > 900 ? 5 : width > 600 ? 4 : 3;
-    final aspectRatio = width > 600 ? 1.8 : 1.3;
 
     return GridView.count(
       crossAxisCount: crossAxisCount,
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
-      mainAxisSpacing: 12,
-      crossAxisSpacing: 12,
-      childAspectRatio: aspectRatio,
+      mainAxisSpacing: 16,
+      crossAxisSpacing: 16,
+      childAspectRatio: 1.1,
       children: items
           .map(
             (item) => InkWell(
               onTap: item.$3,
-              borderRadius: BorderRadius.circular(16),
+              borderRadius: BorderRadius.circular(20),
               child: Container(
                 decoration: BoxDecoration(
-                  color: colorScheme.surfaceContainerLow,
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(
-                    color: colorScheme.outlineVariant.withValues(alpha: 0.5),
-                  ),
+                  color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
+                  borderRadius: BorderRadius.circular(20),
                 ),
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    Icon(item.$1, size: 24, color: colorScheme.primary),
-                    const Gap(8),
+                    Icon(item.$1, size: 28, color: colorScheme.primary),
+                    const Gap(12),
                     Text(
                       item.$2,
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            fontWeight: FontWeight.w500,
-                          ),
+                      style: GoogleFonts.plusJakartaSans(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        color: colorScheme.onSurface,
+                      ),
                     ),
                   ],
                 ),
@@ -492,46 +495,48 @@ class _SelectedFilesPreview extends StatelessWidget {
     final totalSize = files.fold<int>(0, (sum, f) => sum + (f.size));
 
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       decoration: BoxDecoration(
-        color: colorScheme.primaryContainer.withValues(alpha: 0.2),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: colorScheme.primary.withValues(alpha: 0.3),
-        ),
+        color: colorScheme.primary.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(16),
       ),
       child: Row(
         children: [
-          Icon(LucideIcons.paperclip, size: 18, color: colorScheme.primary),
-          const Gap(8),
+          Icon(LucideIcons.paperclip, size: 20, color: colorScheme.primary),
+          const Gap(12),
           Expanded(
-            child: Text(
-              '${files.length} file(s) • ${_formatSize(totalSize)}',
-              style: TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w500,
-                color: colorScheme.primary,
-              ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '${files.length} file(s) selected',
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: colorScheme.primary,
+                  ),
+                ),
+                Text(
+                  _formatSize(totalSize),
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w500,
+                    color: colorScheme.primary.withValues(alpha: 0.7),
+                  ),
+                ),
+              ],
             ),
           ),
-          // Save selection button
           Tooltip(
             message: 'Save selection',
-            child: InkWell(
-              onTap: onSave,
-              borderRadius: BorderRadius.circular(8),
-              child: Padding(
-                padding: const EdgeInsets.all(4),
-                child: Icon(LucideIcons.bookmarkPlus,
-                    size: 18, color: colorScheme.primary),
-              ),
+            child: IconButton(
+              onPressed: onSave,
+              icon: Icon(LucideIcons.bookmarkPlus, color: colorScheme.primary),
             ),
           ),
-          const Gap(4),
-          // Clear button
-          GestureDetector(
-            onTap: onClear,
-            child: Icon(LucideIcons.x, size: 18, color: colorScheme.primary),
+          IconButton(
+            onPressed: onClear,
+            icon: Icon(LucideIcons.x, color: colorScheme.primary),
           ),
         ],
       ),
@@ -558,28 +563,31 @@ class _EmptyDevicesState extends StatelessWidget {
               height: 48,
               child: CircularProgressIndicator(
                 strokeWidth: 2,
-                color: colorScheme.primary.withValues(alpha: 0.5),
+                color: colorScheme.primary,
               ),
             )
           else
             Icon(
               LucideIcons.radar,
               size: 48,
-              color: colorScheme.onSurfaceVariant.withValues(alpha: 0.4),
+              color: colorScheme.onSurfaceVariant.withValues(alpha: 0.3),
             ),
-          const Gap(16),
+          const Gap(24),
           Text(
             isDiscovering ? 'Scanning for devices...' : 'No devices found',
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: colorScheme.onSurfaceVariant,
-                ),
+            style: GoogleFonts.outfit(
+              fontSize: 20,
+              fontWeight: FontWeight.w600,
+              color: colorScheme.onSurface,
+            ),
           ),
-          const Gap(4),
+          const Gap(8),
           Text(
-            'Make sure both devices are on the same network',
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: colorScheme.onSurfaceVariant.withValues(alpha: 0.7),
-                ),
+            'Ensure both devices are on the same local network',
+            style: GoogleFonts.plusJakartaSans(
+              fontSize: 14,
+              color: colorScheme.onSurfaceVariant,
+            ),
           ),
         ],
       ),
@@ -602,41 +610,102 @@ class _NearbyDeviceTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
 
-    return Card(
-      margin: const EdgeInsets.only(bottom: 8),
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Material(
+        color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.2),
+        borderRadius: BorderRadius.circular(20),
+        clipBehavior: Clip.antiAlias,
       child: ListTile(
-        contentPadding:
-            const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
         leading: DeviceAvatar(device: device, showTrustBadge: true),
         title: Text(
           device.name,
-          style: const TextStyle(fontWeight: FontWeight.w600),
+          style: GoogleFonts.outfit(
+            fontSize: 18,
+            fontWeight: FontWeight.w600,
+            color: colorScheme.onSurface,
+          ),
         ),
         subtitle: Text(
           '${device.deviceType.name} • ${device.ipAddress ?? ""}',
-          style: TextStyle(
-            fontSize: 12,
+          style: GoogleFonts.plusJakartaSans(
+            fontSize: 13,
             color: colorScheme.onSurfaceVariant,
           ),
         ),
         trailing: hasFiles
-            ? FilledButton.icon(
+            ? FilledButton(
                 onPressed: onTap,
-                icon: Icon(LucideIcons.send, size: 16),
-                label: const Text('Send'),
                 style: FilledButton.styleFrom(
-                  minimumSize: const Size(0, 36),
-                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  padding: const EdgeInsets.symmetric(horizontal: 20),
                 ),
+                child: Text('Send', style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w600)),
               )
             : Icon(
                 LucideIcons.send,
-                color: colorScheme.primary,
+                color: colorScheme.primary.withValues(alpha: 0.5),
                 size: 20,
               ),
-        shape:
-            RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         onTap: onTap,
+      ),
+      ),
+    );
+  }
+}
+
+class _BroadcastDeviceTile extends StatelessWidget {
+  final DeviceModel device;
+  final bool isSelected;
+  final VoidCallback onToggle;
+
+  const _BroadcastDeviceTile({
+    required this.device,
+    required this.isSelected,
+    required this.onToggle,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Material(
+        color: isSelected ? colorScheme.primaryContainer.withValues(alpha: 0.3) : colorScheme.surfaceContainerHighest.withValues(alpha: 0.2),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
+          side: isSelected ? BorderSide(color: colorScheme.primary.withValues(alpha: 0.5)) : BorderSide.none,
+        ),
+        clipBehavior: Clip.antiAlias,
+      child: ListTile(
+        contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+        leading: DeviceAvatar(device: device, showTrustBadge: true),
+        title: Text(
+          device.name,
+          style: GoogleFonts.outfit(
+            fontSize: 18,
+            fontWeight: FontWeight.w600,
+            color: colorScheme.onSurface,
+          ),
+        ),
+        subtitle: Text(
+          '${device.deviceType.name} • ${device.ipAddress ?? ""}',
+          style: GoogleFonts.plusJakartaSans(
+            fontSize: 13,
+            color: colorScheme.onSurfaceVariant,
+          ),
+        ),
+        trailing: Checkbox(
+          value: isSelected,
+          onChanged: (_) => onToggle(),
+          activeColor: colorScheme.primary,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        onTap: onToggle,
+      ),
       ),
     );
   }

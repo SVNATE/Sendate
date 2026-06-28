@@ -2,9 +2,10 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_animate/flutter_animate.dart';
 import 'package:gap/gap.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:hive/hive.dart';
-import 'package:lucide_icons/lucide_icons.dart';
 
 import '../../../../core/constants/app_constants.dart';
 
@@ -26,32 +27,32 @@ class _OnboardingScreenState extends State<OnboardingScreen>
   static const _notificationChannel =
       MethodChannel('com.svnate.sendate/notification_listener');
 
-  // Whether to show the notification access page (Android only)
   bool get _showNotificationPage => Platform.isAndroid;
 
   List<Widget> get _pages => [
-        // Page 1: Welcome
         const _OnboardingPage(
-          icon: LucideIcons.send,
-          title: 'Transfer Anything',
+          titleLine1: 'Transfer',
+          titleLine2: 'Anything.',
           subtitle:
-              'Send files, photos, videos, and folders between\nany device — instantly and privately.',
-          color: Color(0xFF6366F1),
+              'Send files, photos, videos, and folders between any device. Instantly.',
         ),
-        // Page 2: Notification Access (Android only)
+        const _OnboardingPage(
+          titleLine1: 'Lightning',
+          titleLine2: 'Fast.',
+          subtitle:
+              'No internet? No problem. Transfer massive files seamlessly over local Wi-Fi.',
+        ),
         if (_showNotificationPage)
           _NotificationAccessPage(
             isGranted: _permissionGranted,
             isChecking: _isCheckingPermission,
             onGrant: _requestNotificationAccess,
           ),
-        // Page 3: Privacy / Get Started
         const _OnboardingPage(
-          icon: LucideIcons.shieldCheck,
-          title: 'Privacy First',
+          titleLine1: 'Total',
+          titleLine2: 'Privacy.',
           subtitle:
-              'No cloud. No account. No tracking.\nAll transfers are encrypted end-to-end.',
-          color: Color(0xFF22C55E),
+              'No cloud. No account. No tracking. All transfers are encrypted end-to-end.',
         ),
       ];
 
@@ -73,7 +74,6 @@ class _OnboardingScreenState extends State<OnboardingScreen>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    // When user returns from settings, check if permission was granted
     if (state == AppLifecycleState.resumed && _showNotificationPage) {
       _checkPermission();
     }
@@ -91,7 +91,6 @@ class _OnboardingScreenState extends State<OnboardingScreen>
           _permissionGranted = granted;
           _isCheckingPermission = false;
         });
-        // Auto-advance if granted and currently on the notification page
         if (granted && _currentPage == 1) {
           await Future.delayed(const Duration(milliseconds: 600));
           if (mounted) _next();
@@ -115,8 +114,8 @@ class _OnboardingScreenState extends State<OnboardingScreen>
     final pages = _pages;
     if (_currentPage < pages.length - 1) {
       _controller.nextPage(
-        duration: const Duration(milliseconds: 300),
-        curve: Curves.easeInOut,
+        duration: const Duration(milliseconds: 600),
+        curve: Curves.fastOutSlowIn,
       );
     } else {
       _complete();
@@ -130,127 +129,100 @@ class _OnboardingScreenState extends State<OnboardingScreen>
 
   @override
   Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
     final pages = _pages;
+    final colorScheme = Theme.of(context).colorScheme;
 
     return Scaffold(
-      body: SafeArea(
-        child: Column(
-          children: [
-            // Skip button
-            Align(
+      backgroundColor: colorScheme.surface,
+      body: Stack(
+        children: [
+          PageView.builder(
+            controller: _controller,
+            itemCount: pages.length,
+            onPageChanged: (page) => setState(() => _currentPage = page),
+            itemBuilder: (context, index) => pages[index],
+          ),
+          
+          // Skip button
+          SafeArea(
+            child: Align(
               alignment: Alignment.topRight,
               child: Padding(
                 padding: const EdgeInsets.all(16),
                 child: TextButton(
                   onPressed: _complete,
-                  child: const Text('Skip'),
-                ),
+                  style: TextButton.styleFrom(
+                    foregroundColor: colorScheme.onSurfaceVariant,
+                  ),
+                  child: Text(
+                    'Skip',
+                    style: GoogleFonts.outfit(
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ).animate().fadeIn(delay: 500.ms, duration: 800.ms),
               ),
             ),
-            // Pages
-            Expanded(
-              child: PageView.builder(
-                controller: _controller,
-                itemCount: pages.length,
-                onPageChanged: (page) => setState(() => _currentPage = page),
-                itemBuilder: (context, index) => pages[index],
-              ),
-            ),
-            // Dots + Button
-            Padding(
+          ),
+          
+          // Bottom Controls
+          Align(
+            alignment: Alignment.bottomCenter,
+            child: Padding(
               padding: const EdgeInsets.fromLTRB(32, 0, 32, 48),
               child: Column(
+                mainAxisSize: MainAxisSize.min,
                 children: [
-                  // Dots
+                  // Modern line indicator
                   Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: List.generate(
                       pages.length,
                       (i) => AnimatedContainer(
-                        duration: const Duration(milliseconds: 200),
+                        duration: const Duration(milliseconds: 400),
+                        curve: Curves.easeOutExpo,
                         margin: const EdgeInsets.symmetric(horizontal: 4),
-                        width: i == _currentPage ? 24 : 8,
-                        height: 8,
+                        width: i == _currentPage ? 48 : 12,
+                        height: 3,
                         decoration: BoxDecoration(
                           color: i == _currentPage
                               ? colorScheme.primary
-                              : colorScheme.outlineVariant,
-                          borderRadius: BorderRadius.circular(4),
+                              : colorScheme.onSurface.withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(2),
                         ),
                       ),
                     ),
-                  ),
-                  const Gap(32),
+                  ).animate().fadeIn(delay: 600.ms),
+                  const Gap(48),
                   // Next / Get Started button
                   SizedBox(
                     width: double.infinity,
+                    height: 56,
                     child: FilledButton(
+                      style: FilledButton.styleFrom(
+                        backgroundColor: colorScheme.primary,
+                        foregroundColor: colorScheme.onPrimary,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                        elevation: 0,
+                      ),
                       onPressed: _next,
                       child: Text(
                         _currentPage == pages.length - 1
                             ? 'Get Started'
-                            : 'Next',
+                            : 'Continue',
+                        style: GoogleFonts.outfit(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                          letterSpacing: 0.5,
+                        ),
                       ),
                     ),
-                  ),
+                  ).animate().fadeIn(delay: 700.ms).slideY(begin: 0.2, end: 0, curve: Curves.easeOutCubic),
                 ],
               ),
             ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-// --- Static info page ---
-
-class _OnboardingPage extends StatelessWidget {
-  final IconData icon;
-  final String title;
-  final String subtitle;
-  final Color color;
-
-  const _OnboardingPage({
-    required this.icon,
-    required this.title,
-    required this.subtitle,
-    required this.color,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 40),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Container(
-            width: 120,
-            height: 120,
-            decoration: BoxDecoration(
-              color: color.withValues(alpha: 0.1),
-              shape: BoxShape.circle,
-            ),
-            child: Icon(icon, size: 56, color: color),
-          ),
-          const Gap(40),
-          Text(
-            title,
-            style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                  fontWeight: FontWeight.w700,
-                ),
-            textAlign: TextAlign.center,
-          ),
-          const Gap(16),
-          Text(
-            subtitle,
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  height: 1.5,
-                ),
-            textAlign: TextAlign.center,
           ),
         ],
       ),
@@ -258,7 +230,73 @@ class _OnboardingPage extends StatelessWidget {
   }
 }
 
-// --- Notification Access permission page ---
+class _OnboardingPage extends StatelessWidget {
+  final String titleLine1;
+  final String titleLine2;
+  final String subtitle;
+
+  const _OnboardingPage({
+    required this.titleLine1,
+    required this.titleLine2,
+    required this.subtitle,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 32),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Gap(80),
+            Text(
+              titleLine1,
+              style: GoogleFonts.outfit(
+                fontSize: 64,
+                fontWeight: FontWeight.w800,
+                color: colorScheme.onSurface,
+                height: 1.0,
+                letterSpacing: -2,
+              ),
+            ).animate().fadeIn(duration: 600.ms).slideX(begin: -0.1, end: 0, curve: Curves.easeOutCubic),
+            Text(
+              titleLine2,
+              style: GoogleFonts.outfit(
+                fontSize: 64,
+                fontWeight: FontWeight.w800,
+                color: colorScheme.primary,
+                height: 1.0,
+                letterSpacing: -2,
+              ),
+            ).animate().fadeIn(delay: 100.ms, duration: 600.ms).slideX(begin: -0.1, end: 0, curve: Curves.easeOutCubic),
+            const Gap(32),
+            Container(
+              width: 48,
+              height: 4,
+              decoration: BoxDecoration(
+                color: colorScheme.primary.withValues(alpha: 0.3),
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ).animate().fadeIn(delay: 200.ms).scaleX(alignment: Alignment.centerLeft),
+            const Gap(32),
+            Text(
+              subtitle,
+              style: GoogleFonts.plusJakartaSans(
+                fontSize: 16,
+                color: colorScheme.onSurfaceVariant,
+                height: 1.6,
+                fontWeight: FontWeight.w500,
+              ),
+            ).animate().fadeIn(delay: 300.ms, duration: 600.ms).slideY(begin: 0.1, end: 0, curve: Curves.easeOutCubic),
+          ],
+        ),
+      ),
+    );
+  }
+}
 
 class _NotificationAccessPage extends StatelessWidget {
   final bool isGranted;
@@ -275,98 +313,86 @@ class _NotificationAccessPage extends StatelessWidget {
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
 
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 40),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          // Icon
-          AnimatedSwitcher(
-            duration: const Duration(milliseconds: 400),
-            child: isGranted
-                ? Container(
-                    key: const ValueKey('granted'),
-                    width: 120,
-                    height: 120,
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF22C55E).withValues(alpha: 0.1),
-                      shape: BoxShape.circle,
-                    ),
-                    child: const Icon(
-                      LucideIcons.checkCircle,
-                      size: 56,
-                      color: Color(0xFF22C55E),
-                    ),
-                  )
-                : Container(
-                    key: const ValueKey('request'),
-                    width: 120,
-                    height: 120,
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFF59E0B).withValues(alpha: 0.1),
-                      shape: BoxShape.circle,
-                    ),
-                    child: const Icon(
-                      LucideIcons.bellRing,
-                      size: 56,
-                      color: Color(0xFFF59E0B),
-                    ),
-                  ),
-          ),
-          const Gap(40),
-          // Title
-          Text(
-            isGranted ? 'Notification Access Granted' : 'Enable Notification Sync',
-            style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                  fontWeight: FontWeight.w700,
-                ),
-            textAlign: TextAlign.center,
-          ),
-          const Gap(16),
-          // Subtitle
-          Text(
-            isGranted
-                ? 'Your phone notifications will now appear\non your connected devices.'
-                : 'Allow Sendate to read your notifications\nso they appear on your connected PC or Mac.',
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: colorScheme.onSurfaceVariant,
-                  height: 1.5,
-                ),
-            textAlign: TextAlign.center,
-          ),
-          const Gap(32),
-          // Action button
-          if (!isGranted)
-            SizedBox(
-              width: double.infinity,
-              child: OutlinedButton.icon(
-                onPressed: isChecking ? null : onGrant,
-                icon: isChecking
-                    ? SizedBox(
-                        width: 16,
-                        height: 16,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: colorScheme.primary,
-                        ),
-                      )
-                    : const Icon(LucideIcons.externalLink, size: 18),
-                label: Text(
-                  isChecking ? 'Checking...' : 'Grant Notification Access',
-                ),
-              ),
-            ),
-          if (!isGranted) ...[
-            const Gap(12),
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 32),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Gap(80),
             Text(
-              'You\'ll be taken to system settings.\nEnable Sendate and come back here.',
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: colorScheme.onSurfaceVariant.withValues(alpha: 0.7),
+              isGranted ? 'Sync' : 'Enable',
+              style: GoogleFonts.outfit(
+                fontSize: 64,
+                fontWeight: FontWeight.w800,
+                color: colorScheme.onSurface,
+                height: 1.0,
+                letterSpacing: -2,
+              ),
+            ).animate().fadeIn(duration: 600.ms).slideX(begin: -0.1, end: 0, curve: Curves.easeOutCubic),
+            Text(
+              'Sync.',
+              style: GoogleFonts.outfit(
+                fontSize: 64,
+                fontWeight: FontWeight.w800,
+                color: colorScheme.primary,
+                height: 1.0,
+                letterSpacing: -2,
+              ),
+            ).animate().fadeIn(delay: 100.ms, duration: 600.ms).slideX(begin: -0.1, end: 0, curve: Curves.easeOutCubic),
+            const Gap(32),
+            Container(
+              width: 48,
+              height: 4,
+              decoration: BoxDecoration(
+                color: colorScheme.primary.withValues(alpha: 0.3),
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ).animate().fadeIn(delay: 200.ms).scaleX(alignment: Alignment.centerLeft),
+            const Gap(32),
+            Text(
+              isGranted
+                  ? 'Your notifications will sync securely.'
+                  : 'Allow Sendate to read notifications so they appear on your connected devices.',
+              style: GoogleFonts.plusJakartaSans(
+                fontSize: 16,
+                color: colorScheme.onSurfaceVariant,
+                height: 1.6,
+                fontWeight: FontWeight.w500,
+              ),
+            ).animate().fadeIn(delay: 300.ms, duration: 600.ms).slideY(begin: 0.1, end: 0, curve: Curves.easeOutCubic),
+            const Gap(48),
+            if (!isGranted)
+              SizedBox(
+                height: 48,
+                child: OutlinedButton(
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: colorScheme.onSurface,
+                    side: BorderSide(color: colorScheme.outline),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
                   ),
-              textAlign: TextAlign.center,
-            ),
+                  onPressed: isChecking ? null : onGrant,
+                  child: isChecking
+                      ? SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: colorScheme.primary,
+                          ),
+                        )
+                      : Text(
+                          'Grant Access',
+                          style: GoogleFonts.outfit(
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                ),
+              ).animate().fadeIn(delay: 400.ms).slideY(begin: 0.1, end: 0, curve: Curves.easeOutCubic),
           ],
-        ],
+        ),
       ),
     );
   }

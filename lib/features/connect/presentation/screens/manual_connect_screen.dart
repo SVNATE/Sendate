@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:gap/gap.dart';
+import 'package:go_router/go_router.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 
 import '../../../../shared/models/device_model.dart';
@@ -31,63 +33,119 @@ class _ManualConnectScreenState extends ConsumerState<ManualConnectScreen> {
     final colorScheme = Theme.of(context).colorScheme;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Manual Connect')),
-      body: Padding(
-        padding: const EdgeInsets.all(24),
+      backgroundColor: colorScheme.surface,
+      body: SafeArea(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              'Enter device IP address',
-              style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w600,
+            // Custom Header
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              child: Row(
+                children: [
+                  IconButton(
+                    icon: Icon(LucideIcons.arrowLeft, color: colorScheme.onSurface),
+                    onPressed: () => context.pop(),
                   ),
-            ),
-            const Gap(8),
-            Text(
-              'Connect to a device by entering its IP address directly. '
-              'Use this when automatic discovery doesn\'t find the device.',
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: colorScheme.onSurfaceVariant,
-                  ),
-            ),
-            const Gap(24),
-            TextField(
-              controller: _ipController,
-              decoration: InputDecoration(
-                labelText: 'IP Address',
-                hintText: '192.168.1.100',
-                prefixIcon: Icon(LucideIcons.globe),
+                ],
               ),
-              keyboardType: TextInputType.number,
-              autofocus: true,
             ),
-            const Gap(16),
-            TextField(
-              controller: _portController,
-              decoration: InputDecoration(
-                labelText: 'Port',
-                hintText: '53318',
-                prefixIcon: Icon(LucideIcons.hash),
-              ),
-              keyboardType: TextInputType.number,
-            ),
-            const Gap(32),
-            SizedBox(
-              width: double.infinity,
-              child: FilledButton.icon(
-                onPressed: _isConnecting ? null : _connect,
-                icon: _isConnecting
-                    ? const SizedBox(
-                        width: 16,
-                        height: 16,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: Colors.white,
+            
+            Expanded(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.symmetric(horizontal: 24),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Gap(16),
+                    Text(
+                      'Manual IP',
+                      style: GoogleFonts.outfit(
+                        fontSize: 48,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: -1.5,
+                        color: colorScheme.onSurface,
+                      ),
+                    ),
+                    const Gap(16),
+                    Text(
+                      'Connect to a device by entering its IP address directly. '
+                      'Use this when automatic discovery doesn\'t find the device.',
+                      style: GoogleFonts.plusJakartaSans(
+                        fontSize: 16,
+                        color: colorScheme.onSurfaceVariant,
+                        height: 1.5,
+                      ),
+                    ),
+                    const Gap(40),
+                    
+                    Container(
+                      padding: const EdgeInsets.all(4),
+                      decoration: BoxDecoration(
+                        color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
+                        borderRadius: BorderRadius.circular(24),
+                      ),
+                      child: Column(
+                        children: [
+                          TextField(
+                            controller: _ipController,
+                            style: GoogleFonts.plusJakartaSans(fontSize: 18, fontWeight: FontWeight.w600),
+                            decoration: InputDecoration(
+                              labelText: 'IP Address',
+                              labelStyle: GoogleFonts.plusJakartaSans(color: colorScheme.primary),
+                              hintText: '192.168.1.100',
+                              hintStyle: GoogleFonts.plusJakartaSans(color: colorScheme.onSurfaceVariant.withValues(alpha: 0.5)),
+                              prefixIcon: Icon(LucideIcons.globe, color: colorScheme.primary),
+                              border: InputBorder.none,
+                              contentPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+                            ),
+                            keyboardType: TextInputType.number,
+                            autofocus: true,
+                          ),
+                          Divider(height: 1, color: colorScheme.outlineVariant.withValues(alpha: 0.5), indent: 24, endIndent: 24),
+                          TextField(
+                            controller: _portController,
+                            style: GoogleFonts.plusJakartaSans(fontSize: 18, fontWeight: FontWeight.w600),
+                            decoration: InputDecoration(
+                              labelText: 'Port',
+                              labelStyle: GoogleFonts.plusJakartaSans(color: colorScheme.primary),
+                              hintText: '53318',
+                              hintStyle: GoogleFonts.plusJakartaSans(color: colorScheme.onSurfaceVariant.withValues(alpha: 0.5)),
+                              prefixIcon: Icon(LucideIcons.hash, color: colorScheme.primary),
+                              border: InputBorder.none,
+                              contentPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+                            ),
+                            keyboardType: TextInputType.number,
+                          ),
+                        ],
+                      ),
+                    ),
+                    
+                    const Gap(40),
+                    
+                    SizedBox(
+                      width: double.infinity,
+                      child: FilledButton.icon(
+                        onPressed: _isConnecting ? null : _connect,
+                        style: FilledButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(vertical: 20),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
                         ),
-                      )
-                    : Icon(LucideIcons.link),
-                label: Text(_isConnecting ? 'Connecting...' : 'Connect'),
+                        icon: _isConnecting
+                            ? SizedBox(
+                                width: 24,
+                                height: 24,
+                                child: CircularProgressIndicator(strokeWidth: 2.5, color: colorScheme.onPrimary),
+                              )
+                            : const Icon(LucideIcons.link, size: 24),
+                        label: Text(
+                          _isConnecting ? 'Connecting...' : 'Connect',
+                          style: GoogleFonts.plusJakartaSans(fontSize: 18, fontWeight: FontWeight.w700),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
           ],
@@ -107,7 +165,6 @@ class _ManualConnectScreenState extends ConsumerState<ManualConnectScreen> {
       return;
     }
 
-    // Validate IP format
     final parts = ip.split('.');
     if (parts.length != 4 || parts.any((p) => int.tryParse(p) == null)) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -118,7 +175,6 @@ class _ManualConnectScreenState extends ConsumerState<ManualConnectScreen> {
 
     setState(() => _isConnecting = true);
 
-    // Create a manual device entry
     final device = DeviceModel(
       id: 'manual-$ip:$port',
       name: ip,
@@ -131,7 +187,6 @@ class _ManualConnectScreenState extends ConsumerState<ManualConnectScreen> {
       lastSeen: DateTime.now(),
     );
 
-    // Add to nearby devices
     ref.read(nearbyDevicesProvider.notifier).addDevice(device);
 
     setState(() => _isConnecting = false);
@@ -140,6 +195,6 @@ class _ManualConnectScreenState extends ConsumerState<ManualConnectScreen> {
       SnackBar(content: Text('Device added: $ip:$port')),
     );
 
-    Navigator.pop(context);
+    if (mounted) Navigator.pop(context);
   }
 }

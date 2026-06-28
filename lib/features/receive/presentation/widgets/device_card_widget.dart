@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:gap/gap.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 
 import '../../../../shared/models/device_model.dart';
@@ -19,55 +20,65 @@ class DeviceCardWidget extends StatelessWidget {
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
 
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(20),
-        child: Row(
-          children: [
-            DeviceAvatar(device: device, size: 56),
-            const Gap(16),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    device.name,
-                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                          fontWeight: FontWeight.w600,
-                        ),
+    return Container(
+      decoration: BoxDecoration(
+        color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
+        borderRadius: BorderRadius.circular(24),
+      ),
+      padding: const EdgeInsets.all(20),
+      child: Row(
+        children: [
+          DeviceAvatar(device: device, size: 56),
+          const Gap(16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  device.name,
+                  style: GoogleFonts.outfit(
+                    fontSize: 20,
+                    fontWeight: FontWeight.w600,
+                    color: colorScheme.onSurface,
                   ),
-                  const Gap(4),
-                  Row(
+                ),
+                const Gap(4),
+                GestureDetector(
+                  onTap: onCopyAddress,
+                  child: Row(
                     children: [
                       Icon(
                         LucideIcons.fingerprint,
                         size: 14,
-                        color: colorScheme.onSurfaceVariant,
+                        color: colorScheme.primary,
                       ),
-                      const Gap(4),
+                      const Gap(6),
                       Expanded(
                         child: Text(
                           device.fingerprint,
-                          style:
-                              Theme.of(context).textTheme.bodySmall?.copyWith(
-                                    color: colorScheme.onSurfaceVariant,
-                                    fontFamily: 'monospace',
-                                  ),
+                          style: GoogleFonts.plusJakartaSans(
+                            fontSize: 13,
+                            color: colorScheme.onSurfaceVariant,
+                            letterSpacing: 1,
+                          ),
                           overflow: TextOverflow.ellipsis,
                         ),
                       ),
                     ],
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
-            IconButton(
-              onPressed: onCopyAddress,
-              icon: Icon(LucideIcons.copy),
-              tooltip: 'Copy fingerprint',
+          ),
+          IconButton(
+            onPressed: onCopyAddress,
+            style: IconButton.styleFrom(
+              backgroundColor: colorScheme.primaryContainer.withValues(alpha: 0.5),
             ),
-          ],
-        ),
+            icon: Icon(LucideIcons.copy, size: 18, color: colorScheme.primary),
+            tooltip: 'Copy fingerprint',
+          ),
+        ],
       ),
     );
   }

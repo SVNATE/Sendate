@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:gap/gap.dart';
+import 'package:go_router/go_router.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 
 import '../../../../services/messaging/messaging_service.dart';
@@ -31,15 +33,16 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     final myId = ref.read(currentDeviceProvider)?.id ?? '';
     final service = ref.read(messagingServiceProvider);
     final msgs = await service.getMessages(widget.device.id, myId);
-    setState(() {
-      _messages = msgs;
-      _loading = false;
-    });
+    if (mounted) {
+      setState(() {
+        _messages = msgs;
+        _loading = false;
+      });
+    }
 
-    // Listen for new messages
     service.messageStream.listen((msg) {
       if (msg.senderId == widget.device.id || msg.recipientId == widget.device.id) {
-        setState(() => _messages = [..._messages, msg]);
+        if (mounted) setState(() => _messages = [..._messages, msg]);
       }
     });
   }
@@ -50,85 +53,215 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     super.dispose();
   }
 
-  @override
-  Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
-    final myId = ref.read(currentDeviceProvider)?.id ?? '';
-
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(widget.device.name),
-        actions: [
-          IconButton(
-            icon: Icon(LucideIcons.trash2),
-            onPressed: () async {
-              await ref.read(messagingServiceProvider).clearConversation(widget.device.id, myId);
-              setState(() => _messages = []);
-            },
-          ),
-        ],
+  void _confirmClear() {
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
-      body: Column(
-        children: [
-          Expanded(
-            child: _loading
-                ? const Center(child: CircularProgressIndicator())
-                : _messages.isEmpty
-                    ? Center(
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(LucideIcons.messageCircle, size: 48, color: colorScheme.onSurfaceVariant.withValues(alpha: 0.3)),
-                            const Gap(12),
-                            Text('No messages yet', style: TextStyle(color: colorScheme.onSurfaceVariant)),
-                          ],
-                        ),
-                      )
-                    : ListView.builder(
-                        padding: const EdgeInsets.all(16),
-                        itemCount: _messages.length,
-                        itemBuilder: (context, index) {
-                          final msg = _messages[index];
-                          final isMe = msg.senderId == myId;
-                          return _MessageBubble(message: msg, isMe: isMe);
-                        },
-                      ),
-          ),
-          // Input
-          Container(
-            padding: const EdgeInsets.fromLTRB(16, 8, 8, 8),
-            decoration: BoxDecoration(
-              color: colorScheme.surface,
-              border: Border(top: BorderSide(color: colorScheme.outlineVariant.withValues(alpha: 0.3))),
-            ),
-            child: SafeArea(
-              top: false,
-              child: Row(
+      builder: (context) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Clear Chat?',
+                style: GoogleFonts.outfit(fontSize: 28, fontWeight: FontWeight.w800),
+              ),
+              const Gap(12),
+              Text(
+                'This will permanently delete all messages with ${widget.device.name}.',
+                style: GoogleFonts.plusJakartaSans(
+                  fontSize: 16,
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+              ),
+              const Gap(32),
+              Row(
                 children: [
                   Expanded(
-                    child: TextField(
-                      controller: _controller,
-                      decoration: InputDecoration(
-                        hintText: 'Type a message...',
-                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(24), borderSide: BorderSide.none),
-                        filled: true,
-                        fillColor: colorScheme.surfaceContainerLow,
-                        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                    child: OutlinedButton(
+                      style: OutlinedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                       ),
-                      textInputAction: TextInputAction.send,
-                      onSubmitted: (_) => _send(),
+                      onPressed: () => Navigator.pop(context),
+                      child: Text('Cancel', style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w600)),
                     ),
                   ),
-                  const Gap(8),
-                  IconButton.filled(
-                    onPressed: _send,
-                    icon: Icon(LucideIcons.send, size: 18),
+                  const Gap(16),
+                  Expanded(
+                    child: FilledButton(
+                      style: FilledButton.styleFrom(
+                        backgroundColor: Theme.of(context).colorScheme.error,
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                      ),
+                      onPressed: () async {
+                        Navigator.pop(context);
+                        final myId = ref.read(currentDeviceProvider)?.id ?? '';
+                        await ref.read(messagingServiceProvider).clearConversation(widget.device.id, myId);
+                        setState(() => _messages = []);
+                      },
+                      child: Text('Clear', style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w600, color: Theme.of(context).colorScheme.onError)),
+                    ),
                   ),
                 ],
               ),
-            ),
+            ],
           ),
-        ],
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final myId = ref.watch(currentDeviceProvider)?.id ?? '';
+
+    return Scaffold(
+      backgroundColor: colorScheme.surface,
+      body: SafeArea(
+        child: Column(
+          children: [
+            // Custom Header
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              child: Row(
+                children: [
+                  IconButton(
+                    icon: Icon(LucideIcons.arrowLeft, color: colorScheme.onSurface),
+                    onPressed: () => context.pop(),
+                  ),
+                  const Gap(8),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          widget.device.name,
+                          style: GoogleFonts.outfit(
+                            fontSize: 24,
+                            fontWeight: FontWeight.w700,
+                            color: colorScheme.onSurface,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        Text(
+                          '${widget.device.deviceType.name} • ${widget.device.ipAddress ?? ""}',
+                          style: GoogleFonts.plusJakartaSans(
+                            fontSize: 12,
+                            color: colorScheme.onSurfaceVariant,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
+                    ),
+                  ),
+                  if (_messages.isNotEmpty)
+                    IconButton(
+                      icon: Icon(LucideIcons.trash2, color: colorScheme.onSurfaceVariant),
+                      onPressed: _confirmClear,
+                    ),
+                ],
+              ),
+            ),
+            
+            // Messages Area
+            Expanded(
+              child: _loading
+                  ? Center(
+                      child: CircularProgressIndicator(
+                        color: colorScheme.primary.withValues(alpha: 0.5),
+                      ),
+                    )
+                  : _messages.isEmpty
+                      ? Center(
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(LucideIcons.messageSquare, size: 64, color: colorScheme.onSurfaceVariant.withValues(alpha: 0.2)),
+                              const Gap(24),
+                              Text(
+                                'Say Hi!',
+                                style: GoogleFonts.outfit(
+                                  fontSize: 24,
+                                  fontWeight: FontWeight.w700,
+                                  color: colorScheme.onSurface,
+                                ),
+                              ),
+                              const Gap(8),
+                              Text(
+                                'Start a secure conversation.',
+                                style: GoogleFonts.plusJakartaSans(
+                                  fontSize: 16,
+                                  color: colorScheme.onSurfaceVariant,
+                                ),
+                              ),
+                            ],
+                          ),
+                        )
+                      : ListView.builder(
+                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+                          itemCount: _messages.length,
+                          itemBuilder: (context, index) {
+                            final msg = _messages[index];
+                            final isMe = msg.senderId == myId;
+                            return _MessageBubble(message: msg, isMe: isMe);
+                          },
+                        ),
+            ),
+
+            // Floating Input Bar
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+              child: Container(
+                decoration: BoxDecoration(
+                  color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
+                  borderRadius: BorderRadius.circular(32),
+                ),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                child: Row(
+                  children: [
+                    const Gap(12),
+                    Expanded(
+                      child: TextField(
+                        controller: _controller,
+                        style: GoogleFonts.plusJakartaSans(fontSize: 15),
+                        decoration: InputDecoration(
+                          hintText: 'Type a message...',
+                          hintStyle: GoogleFonts.plusJakartaSans(
+                            color: colorScheme.onSurfaceVariant.withValues(alpha: 0.7),
+                          ),
+                          border: InputBorder.none,
+                          isDense: true,
+                        ),
+                        textInputAction: TextInputAction.send,
+                        onSubmitted: (_) => _send(),
+                      ),
+                    ),
+                    const Gap(8),
+                    Container(
+                      decoration: BoxDecoration(
+                        color: colorScheme.primary,
+                        shape: BoxShape.circle,
+                      ),
+                      child: IconButton(
+                        onPressed: _send,
+                        icon: Icon(LucideIcons.send, size: 18, color: colorScheme.onPrimary),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -177,36 +310,38 @@ class _MessageBubble extends StatelessWidget {
     return Align(
       alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
       child: Container(
-        margin: const EdgeInsets.only(bottom: 8),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        margin: const EdgeInsets.only(bottom: 12),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.75),
         decoration: BoxDecoration(
-          color: isMe ? colorScheme.primary : colorScheme.surfaceContainerHighest,
+          color: isMe ? colorScheme.primary : colorScheme.surfaceContainerHighest.withValues(alpha: 0.4),
           borderRadius: BorderRadius.only(
-            topLeft: const Radius.circular(16),
-            topRight: const Radius.circular(16),
-            bottomLeft: Radius.circular(isMe ? 16 : 4),
-            bottomRight: Radius.circular(isMe ? 4 : 16),
+            topLeft: const Radius.circular(20),
+            topRight: const Radius.circular(20),
+            bottomLeft: Radius.circular(isMe ? 20 : 6),
+            bottomRight: Radius.circular(isMe ? 6 : 20),
           ),
         ),
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.end,
+          crossAxisAlignment: isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
           children: [
             Text(
               message.text,
-              style: TextStyle(
+              style: GoogleFonts.plusJakartaSans(
                 color: isMe ? colorScheme.onPrimary : colorScheme.onSurface,
-                fontSize: 14,
+                fontSize: 15,
+                height: 1.4,
               ),
             ),
-            const Gap(4),
+            const Gap(6),
             Row(
               mainAxisSize: MainAxisSize.min,
               children: [
                 Text(
                   '${message.timestamp.hour.toString().padLeft(2, '0')}:${message.timestamp.minute.toString().padLeft(2, '0')}',
-                  style: TextStyle(
-                    fontSize: 10,
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
                     color: isMe ? colorScheme.onPrimary.withValues(alpha: 0.7) : colorScheme.onSurfaceVariant,
                   ),
                 ),
@@ -214,7 +349,7 @@ class _MessageBubble extends StatelessWidget {
                   const Gap(4),
                   Icon(
                     message.delivered ? LucideIcons.checkCheck : LucideIcons.check,
-                    size: 12,
+                    size: 14,
                     color: colorScheme.onPrimary.withValues(alpha: 0.7),
                   ),
                 ],

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:gap/gap.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:hive/hive.dart';
 import 'package:local_auth/local_auth.dart';
 import 'package:lucide_icons/lucide_icons.dart';
@@ -45,7 +46,6 @@ class _AppLockScreenState extends State<AppLockScreen> {
     try {
       final canAuth = await _auth.canCheckBiometrics || await _auth.isDeviceSupported();
       if (!canAuth) {
-        // No biometric available — unlock directly
         widget.onUnlocked();
         return;
       }
@@ -64,9 +64,7 @@ class _AppLockScreenState extends State<AppLockScreen> {
         setState(() => _error = 'Authentication failed. Tap Unlock to try again.');
       }
     } catch (e) {
-      // If auth fails (e.g., no biometric enrolled), allow unlock
-      setState(() => _error = e.toString());
-      // Auto-unlock after 2s on error so user isn't stuck
+      setState(() => _error = 'Cannot use biometrics right now.');
       Future.delayed(const Duration(seconds: 3), () {
         if (mounted) widget.onUnlocked();
       });
@@ -80,32 +78,69 @@ class _AppLockScreenState extends State<AppLockScreen> {
     final colorScheme = Theme.of(context).colorScheme;
 
     return Scaffold(
+      backgroundColor: colorScheme.surface,
       body: Center(
         child: Padding(
-          padding: const EdgeInsets.all(32),
+          padding: const EdgeInsets.all(40),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(LucideIcons.lock, size: 64, color: colorScheme.primary),
-              const Gap(24),
-              Text(
-                'Sendate is Locked',
-                style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w600),
+              Container(
+                padding: const EdgeInsets.all(24),
+                decoration: BoxDecoration(
+                  color: colorScheme.primary.withValues(alpha: 0.1),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(LucideIcons.lock, size: 64, color: colorScheme.primary),
               ),
-              const Gap(8),
+              const Gap(40),
               Text(
-                'Authenticate to continue',
-                style: TextStyle(color: colorScheme.onSurfaceVariant),
+                'Locked',
+                style: GoogleFonts.outfit(
+                  fontSize: 48,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: -1.5,
+                  color: colorScheme.onSurface,
+                ),
+              ),
+              const Gap(12),
+              Text(
+                'Authenticate to access Sendate',
+                style: GoogleFonts.plusJakartaSans(
+                  fontSize: 16,
+                  color: colorScheme.onSurfaceVariant,
+                ),
+                textAlign: TextAlign.center,
               ),
               if (_error != null) ...[
-                const Gap(16),
-                Text(_error!, style: TextStyle(color: colorScheme.error)),
+                const Gap(24),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  decoration: BoxDecoration(
+                    color: colorScheme.errorContainer.withValues(alpha: 0.5),
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: Text(
+                    _error!,
+                    style: GoogleFonts.plusJakartaSans(color: colorScheme.error, fontWeight: FontWeight.w500),
+                    textAlign: TextAlign.center,
+                  ),
+                ),
               ],
-              const Gap(32),
-              FilledButton.icon(
-                onPressed: _isAuthenticating ? null : _authenticate,
-                icon: Icon(LucideIcons.fingerprint),
-                label: const Text('Unlock'),
+              const Gap(48),
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton.icon(
+                  onPressed: _isAuthenticating ? null : _authenticate,
+                  icon: _isAuthenticating
+                      ? SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: colorScheme.onPrimary))
+                      : const Icon(LucideIcons.fingerprint, size: 24),
+                  label: Text(_isAuthenticating ? 'Authenticating...' : 'Unlock', style: GoogleFonts.plusJakartaSans(fontSize: 18, fontWeight: FontWeight.w700)),
+                  style: FilledButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 20),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+                  ),
+                ),
               ),
             ],
           ),

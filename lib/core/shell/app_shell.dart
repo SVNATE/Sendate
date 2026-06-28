@@ -1,3 +1,4 @@
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -42,49 +43,118 @@ class AppShell extends ConsumerWidget {
     final activeTransfers = ref.watch(activeTransfersProvider);
 
     return Scaffold(
+      extendBody: true,
       body: Stack(
         children: [
           child,
-          // Active transfers floating overlay
           if (activeTransfers.isNotEmpty)
-            Positioned(
+            const Positioned(
               left: 0,
               right: 0,
-              bottom: 0,
-              child: const ActiveTransfersSheet(),
+              bottom: 96,
+              child: ActiveTransfersSheet(),
             ),
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 0,
+            child: _FlushNavBar(
+              currentIndex: index,
+              onTap: (i) => _onTap(context, i),
+            ),
+          ),
         ],
       ),
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: index,
-        onDestinationSelected: (i) => _onTap(context, i),
-        destinations: [
-          NavigationDestination(
-            icon: Icon(LucideIcons.download),
-            selectedIcon: Icon(LucideIcons.download),
-            label: 'Receive',
+    );
+  }
+}
+
+class _FlushNavBar extends StatelessWidget {
+  final int currentIndex;
+  final ValueChanged<int> onTap;
+
+  const _FlushNavBar({required this.currentIndex, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    
+    return ClipRect(
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+        child: Container(
+          padding: EdgeInsets.only(
+            bottom: MediaQuery.paddingOf(context).bottom,
+            top: 8,
           ),
-          NavigationDestination(
-            icon: Icon(LucideIcons.send),
-            selectedIcon: Icon(LucideIcons.send),
-            label: 'Send',
+          decoration: BoxDecoration(
+            color: colorScheme.surface.withValues(alpha: 0.65),
+            border: Border(
+              top: BorderSide(
+                color: colorScheme.onSurface.withValues(alpha: 0.08),
+                width: 0.5,
+              ),
+            ),
           ),
-          NavigationDestination(
-            icon: Icon(LucideIcons.monitorSmartphone),
-            selectedIcon: Icon(LucideIcons.monitorSmartphone),
-            label: 'Devices',
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+            children: [
+              _NavBarItem(icon: LucideIcons.download, label: 'Receive', isSelected: currentIndex == 0, onTap: () => onTap(0)),
+              _NavBarItem(icon: LucideIcons.send, label: 'Send', isSelected: currentIndex == 1, onTap: () => onTap(1)),
+              _NavBarItem(icon: LucideIcons.monitorSmartphone, label: 'Devices', isSelected: currentIndex == 2, onTap: () => onTap(2)),
+              _NavBarItem(icon: LucideIcons.clock, label: 'History', isSelected: currentIndex == 3, onTap: () => onTap(3)),
+              _NavBarItem(icon: LucideIcons.settings, label: 'Settings', isSelected: currentIndex == 4, onTap: () => onTap(4)),
+            ],
           ),
-          NavigationDestination(
-            icon: Icon(LucideIcons.clock),
-            selectedIcon: Icon(LucideIcons.clock),
-            label: 'History',
-          ),
-          NavigationDestination(
-            icon: Icon(LucideIcons.settings),
-            selectedIcon: Icon(LucideIcons.settings),
-            label: 'Settings',
-          ),
-        ],
+        ),
+      ),
+    );
+  }
+}
+
+class _NavBarItem extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final bool isSelected;
+  final VoidCallback onTap;
+
+  const _NavBarItem({required this.icon, required this.label, required this.isSelected, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: Container(
+        width: 64,
+        padding: const EdgeInsets.only(bottom: 12),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 300),
+              curve: Curves.easeOutCubic,
+              padding: const EdgeInsets.all(8),
+              child: Icon(
+                icon,
+                size: 24,
+                color: isSelected ? colorScheme.primary : colorScheme.onSurfaceVariant.withValues(alpha: 0.6),
+              ),
+            ),
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 300),
+              curve: Curves.easeOutCubic,
+              height: 4,
+              width: isSelected ? 20 : 0,
+              decoration: BoxDecoration(
+                color: isSelected ? colorScheme.primary : Colors.transparent,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

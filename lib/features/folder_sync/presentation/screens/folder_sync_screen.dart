@@ -2,6 +2,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:gap/gap.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 import 'package:uuid/uuid.dart';
 
@@ -16,58 +17,75 @@ class FolderSyncScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final configsAsync = ref.watch(folderSyncConfigsProvider);
+    final colorScheme = Theme.of(context).colorScheme;
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Folder Sync'),
-        actions: [
-          IconButton(
-            icon: const Icon(LucideIcons.plus),
-            tooltip: 'Add sync folder',
-            onPressed: () => _showAddDialog(context, ref),
+      backgroundColor: colorScheme.surface,
+      body: SafeArea(
+        child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Header
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Expanded(
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      'Folder Sync',
+                      style: GoogleFonts.outfit(
+                        fontSize: 48,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: -1.5,
+                        color: colorScheme.onSurface,
+                      ),
+                    ),
+                  ),
+                ),
+                IconButton(
+                  icon: Icon(LucideIcons.plus, color: colorScheme.onSurfaceVariant),
+                  tooltip: 'Add sync folder',
+                  onPressed: () => _showAddDialog(context, ref),
+                ),
+              ],
+            ),
+          ),
+          
+          Expanded(
+            child: configsAsync.when(
+              loading: () => Center(child: CircularProgressIndicator(color: colorScheme.primary)),
+              error: (e, _) => Center(child: Text('Error: $e', style: GoogleFonts.plusJakartaSans(color: colorScheme.error))),
+              data: (configs) => configs.isEmpty
+                  ? _EmptyState(onAdd: () => _showAddDialog(context, ref))
+                  : ListView.builder(
+                      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+                      itemCount: configs.length,
+                      itemBuilder: (context, i) => _SyncConfigTile(
+                        config: configs[i],
+                        onRemove: () => ref.read(folderSyncConfigsProvider.notifier).removeConfig(configs[i].id),
+                        onSyncNow: () => _syncNow(context, ref, configs[i]),
+                      ),
+                    ),
+            ),
           ),
         ],
       ),
-      body: configsAsync.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(child: Text('Error: $e')),
-        data: (configs) => configs.isEmpty
-            ? _EmptyState(onAdd: () => _showAddDialog(context, ref))
-            : ListView.builder(
-                padding: const EdgeInsets.all(16),
-                itemCount: configs.length,
-                itemBuilder: (context, i) => _SyncConfigTile(
-                  config: configs[i],
-                  onRemove: () => ref
-                      .read(folderSyncConfigsProvider.notifier)
-                      .removeConfig(configs[i].id),
-                  onSyncNow: () => _syncNow(context, ref, configs[i]),
-                ),
-              ),
       ),
     );
   }
 
-  Future<void> _syncNow(
-    BuildContext context,
-    WidgetRef ref,
-    FolderSyncConfig config,
-  ) async {
+  Future<void> _syncNow(BuildContext context, WidgetRef ref, FolderSyncConfig config) async {
     final snack = ScaffoldMessenger.of(context);
-    snack.showSnackBar(
-      SnackBar(content: Text('Syncing ${config.localPath}...')),
-    );
+    snack.showSnackBar(SnackBar(content: Text('Syncing ${config.localPath.split('/').last}...')));
     try {
-      final result = await ref
-          .read(folderSyncConfigsProvider.notifier)
-          .syncNow(config);
+      final result = await ref.read(folderSyncConfigsProvider.notifier).syncNow(config);
       snack.clearSnackBars();
       snack.showSnackBar(
-        SnackBar(
-          content: Text(
-            'Sync done — ${result.synced} sent, ${result.errors} errors',
-          ),
-        ),
+        SnackBar(content: Text('Sync done — ${result.synced} sent, ${result.errors} errors')),
       );
     } catch (e) {
       snack.clearSnackBars();
@@ -79,6 +97,9 @@ class FolderSyncScreen extends ConsumerWidget {
     await showModalBottomSheet(
       context: context,
       isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
       builder: (ctx) => _AddSyncSheet(),
     );
   }
@@ -95,27 +116,33 @@ class _EmptyState extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(LucideIcons.folderSync,
-              size: 48, color: colorScheme.onSurfaceVariant.withValues(alpha: 0.4)),
-          const Gap(16),
+          Icon(LucideIcons.folderSync, size: 80, color: colorScheme.onSurfaceVariant.withValues(alpha: 0.3)),
+          const Gap(24),
           Text(
             'No sync folders',
-            style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                  color: colorScheme.onSurfaceVariant,
-                ),
+            style: GoogleFonts.outfit(
+              fontSize: 24,
+              fontWeight: FontWeight.w700,
+              color: colorScheme.onSurface,
+            ),
           ),
           const Gap(8),
           Text(
-            'Tap + to add a folder to sync with a device',
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: colorScheme.onSurfaceVariant.withValues(alpha: 0.7),
-                ),
+            'Tap + to add a folder to sync',
+            style: GoogleFonts.plusJakartaSans(
+              fontSize: 16,
+              color: colorScheme.onSurfaceVariant,
+            ),
           ),
-          const Gap(24),
+          const Gap(32),
           FilledButton.icon(
             onPressed: onAdd,
-            icon: const Icon(LucideIcons.plus),
-            label: const Text('Add Sync Folder'),
+            icon: const Icon(LucideIcons.plus, size: 18),
+            label: Text('Add Sync Folder', style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w600)),
+            style: FilledButton.styleFrom(
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            ),
           ),
         ],
       ),
@@ -149,80 +176,130 @@ class _SyncConfigTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
-    return Card(
+    
+    return Container(
       margin: const EdgeInsets.only(bottom: 12),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Icon(LucideIcons.folderSync, size: 18, color: colorScheme.primary),
-                const Gap(8),
-                Expanded(
-                  child: Text(
-                    config.localPath.split('/').last,
-                    style: const TextStyle(fontWeight: FontWeight.w600),
-                    overflow: TextOverflow.ellipsis,
-                  ),
+      decoration: BoxDecoration(
+        color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.2),
+        borderRadius: BorderRadius.circular(24),
+      ),
+      padding: const EdgeInsets.all(20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: colorScheme.primary.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(12),
                 ),
-                PopupMenuButton<String>(
-                  onSelected: (v) {
-                    if (v == 'sync') onSyncNow();
-                    if (v == 'remove') _confirmRemove(context);
-                  },
-                  itemBuilder: (_) => [
-                    const PopupMenuItem(
-                        value: 'sync',
-                        child: Text('Sync now')),
-                    const PopupMenuItem(
-                        value: 'remove',
-                        child: Text('Remove')),
+                child: Icon(LucideIcons.folderSync, size: 20, color: colorScheme.primary),
+              ),
+              const Gap(16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      config.localPath.split('/').last,
+                      style: GoogleFonts.outfit(fontSize: 18, fontWeight: FontWeight.w600),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    Text(
+                      config.localPath,
+                      style: GoogleFonts.plusJakartaSans(fontSize: 12, color: colorScheme.onSurfaceVariant),
+                      overflow: TextOverflow.ellipsis,
+                    ),
                   ],
                 ),
-              ],
-            ),
-            const Gap(4),
-            Text(
-              config.localPath,
-              style: TextStyle(fontSize: 11, color: colorScheme.onSurfaceVariant),
-              overflow: TextOverflow.ellipsis,
-            ),
-            const Gap(8),
-            Wrap(
-              spacing: 8,
-              children: [
-                _Chip(LucideIcons.smartphone, config.deviceName),
-                _Chip(LucideIcons.arrowRightLeft, _modeName),
-                _Chip(LucideIcons.timer, _intervalLabel),
-              ],
-            ),
-          ],
-        ),
+              ),
+              PopupMenuButton<String>(
+                icon: Icon(LucideIcons.moreVertical, color: colorScheme.onSurfaceVariant),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                onSelected: (v) {
+                  if (v == 'sync') onSyncNow();
+                  if (v == 'remove') _confirmRemove(context);
+                },
+                itemBuilder: (_) => [
+                  PopupMenuItem(
+                      value: 'sync',
+                      child: Text('Sync now', style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w500))),
+                  PopupMenuItem(
+                      value: 'remove',
+                      child: Text('Remove', style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w500, color: colorScheme.error))),
+                ],
+              ),
+            ],
+          ),
+          const Gap(16),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              _Chip(LucideIcons.smartphone, config.deviceName),
+              _Chip(LucideIcons.arrowRightLeft, _modeName),
+              _Chip(LucideIcons.timer, _intervalLabel),
+            ],
+          ),
+        ],
       ),
     );
   }
 
   void _confirmRemove(BuildContext context) {
-    showDialog(
+    showModalBottomSheet(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Remove Sync?'),
-        content: Text('Remove sync for "${config.localPath.split('/').last}"?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancel'),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Remove Sync?', style: GoogleFonts.outfit(fontSize: 28, fontWeight: FontWeight.w800)),
+              const Gap(12),
+              Text(
+                'Are you sure you want to remove the sync task for "${config.localPath.split('/').last}"?',
+                style: GoogleFonts.plusJakartaSans(fontSize: 16, color: Theme.of(context).colorScheme.onSurfaceVariant),
+              ),
+              const Gap(32),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      style: OutlinedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                      ),
+                      onPressed: () => Navigator.pop(ctx),
+                      child: Text('Cancel', style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w600)),
+                    ),
+                  ),
+                  const Gap(16),
+                  Expanded(
+                    child: FilledButton(
+                      style: FilledButton.styleFrom(
+                        backgroundColor: Theme.of(context).colorScheme.error,
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                      ),
+                      onPressed: () {
+                        Navigator.pop(ctx);
+                        onRemove();
+                      },
+                      child: Text('Remove', style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w600, color: Theme.of(context).colorScheme.onError)),
+                    ),
+                  ),
+                ],
+              ),
+            ],
           ),
-          FilledButton(
-            onPressed: () {
-              Navigator.pop(ctx);
-              onRemove();
-            },
-            child: const Text('Remove'),
-          ),
-        ],
+        ),
       ),
     );
   }
@@ -237,28 +314,25 @@ class _Chip extends StatelessWidget {
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
-        color: colorScheme.primaryContainer.withValues(alpha: 0.4),
+        color: colorScheme.surfaceContainerHigh,
         borderRadius: BorderRadius.circular(12),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 12, color: colorScheme.primary),
-          const Gap(4),
+          Icon(icon, size: 12, color: colorScheme.onSurfaceVariant),
+          const Gap(6),
           Text(
             label,
-            style:
-                TextStyle(fontSize: 11, color: colorScheme.primary),
+            style: GoogleFonts.plusJakartaSans(fontSize: 12, fontWeight: FontWeight.w600, color: colorScheme.onSurfaceVariant),
           ),
         ],
       ),
     );
   }
 }
-
-// ── Add Sync Sheet ────────────────────────────────────────────────────────────
 
 class _AddSyncSheet extends ConsumerStatefulWidget {
   @override
@@ -270,7 +344,7 @@ class _AddSyncSheetState extends ConsumerState<_AddSyncSheet> {
   DeviceModel? _selectedDevice;
   SyncMode _syncMode = SyncMode.oneWay;
   ConflictResolution _conflict = ConflictResolution.keepBoth;
-  Duration? _interval; // null = manual
+  Duration? _interval; 
   bool _saving = false;
 
   final _intervalOptions = <String, Duration?>{
@@ -284,141 +358,159 @@ class _AddSyncSheetState extends ConsumerState<_AddSyncSheet> {
   @override
   Widget build(BuildContext context) {
     final nearbyDevices = ref.watch(allNearbyDevicesProvider);
+    final colorScheme = Theme.of(context).colorScheme;
 
-    return Padding(
-      padding: EdgeInsets.fromLTRB(
-          24, 24, 24, MediaQuery.viewInsetsOf(context).bottom + 24),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text('Add Sync Folder',
-              style: Theme.of(context).textTheme.titleLarge),
-          const Gap(20),
+    return SafeArea(
+      child: SingleChildScrollView(
+        child: Padding(
+          padding: EdgeInsets.fromLTRB(24, 24, 24, MediaQuery.viewInsetsOf(context).bottom + 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Add Sync Folder', style: GoogleFonts.outfit(fontSize: 28, fontWeight: FontWeight.w800)),
+              const Gap(24),
 
-          // Folder picker
-          _SectionLabel('Local Folder'),
-          const Gap(8),
-          OutlinedButton.icon(
-            icon: const Icon(LucideIcons.folderOpen),
-            label: Text(_selectedPath?.split('/').last ?? 'Choose folder…'),
-            onPressed: _pickFolder,
-          ),
-
-          const Gap(16),
-
-          // Device picker
-          _SectionLabel('Target Device'),
-          const Gap(8),
-          if (nearbyDevices.isEmpty)
-            const Text('No nearby devices',
-                style: TextStyle(fontSize: 13, color: Colors.grey))
-          else
-            DropdownButtonFormField<DeviceModel>(
-              value: _selectedDevice,
-              hint: const Text('Select device'),
-              items: nearbyDevices
-                  .map((d) => DropdownMenuItem(
-                      value: d, child: Text(d.name)))
-                  .toList(),
-              onChanged: (d) => setState(() => _selectedDevice = d),
-              decoration: const InputDecoration(
-                border: OutlineInputBorder(),
-                isDense: true,
+              _SectionLabel('Local Folder'),
+              const Gap(8),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  icon: const Icon(LucideIcons.folderOpen, size: 18),
+                  label: Text(_selectedPath?.split('/').last ?? 'Choose folder…', style: GoogleFonts.plusJakartaSans()),
+                  style: OutlinedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                  ),
+                  onPressed: _pickFolder,
+                ),
               ),
-            ),
 
-          const Gap(16),
+              const Gap(20),
 
-          // Sync mode
-          _SectionLabel('Sync Mode'),
-          const Gap(8),
-          SegmentedButton<SyncMode>(
-            segments: [
-              ButtonSegment(
-                  value: SyncMode.oneWay,
-                  label: const Text('One-way'),
-                  icon: const Icon(LucideIcons.arrowRight)),
-              ButtonSegment(
-                  value: SyncMode.twoWay,
-                  label: const Text('Two-way'),
-                  icon: const Icon(LucideIcons.arrowLeftRight)),
-              ButtonSegment(
-                  value: SyncMode.manual,
-                  label: const Text('Manual'),
-                  icon: const Icon(LucideIcons.hand)),
+              _SectionLabel('Target Device'),
+              const Gap(8),
+              if (nearbyDevices.isEmpty)
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  decoration: BoxDecoration(
+                    color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: Center(
+                    child: Text('No nearby devices found', style: GoogleFonts.plusJakartaSans(color: colorScheme.onSurfaceVariant)),
+                  ),
+                )
+              else
+                DropdownButtonFormField<DeviceModel>(
+                  value: _selectedDevice,
+                  hint: Text('Select device', style: GoogleFonts.plusJakartaSans()),
+                  items: nearbyDevices
+                      .map((d) => DropdownMenuItem(value: d, child: Text(d.name, style: GoogleFonts.plusJakartaSans())))
+                      .toList(),
+                  onChanged: (d) => setState(() => _selectedDevice = d),
+                  decoration: InputDecoration(
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide.none),
+                    filled: true,
+                    fillColor: colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+                  ),
+                ),
+
+              const Gap(20),
+
+              _SectionLabel('Sync Mode'),
+              const Gap(8),
+              SegmentedButton<SyncMode>(
+                segments: [
+                  ButtonSegment(
+                      value: SyncMode.oneWay,
+                      label: Text('One-way', style: GoogleFonts.plusJakartaSans()),
+                      icon: const Icon(LucideIcons.arrowRight, size: 16)),
+                  ButtonSegment(
+                      value: SyncMode.twoWay,
+                      label: Text('Two-way', style: GoogleFonts.plusJakartaSans()),
+                      icon: const Icon(LucideIcons.arrowLeftRight, size: 16)),
+                  ButtonSegment(
+                      value: SyncMode.manual,
+                      label: Text('Manual', style: GoogleFonts.plusJakartaSans()),
+                      icon: const Icon(LucideIcons.hand, size: 16)),
+                ],
+                selected: {_syncMode},
+                onSelectionChanged: (s) => setState(() => _syncMode = s.first),
+                style: SegmentedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                ),
+              ),
+
+              const Gap(20),
+
+              _SectionLabel('Conflict Resolution'),
+              const Gap(8),
+              DropdownButtonFormField<ConflictResolution>(
+                value: _conflict,
+                items: [
+                  DropdownMenuItem(value: ConflictResolution.keepBoth, child: Text('Keep both', style: GoogleFonts.plusJakartaSans())),
+                  DropdownMenuItem(value: ConflictResolution.replace, child: Text('Replace', style: GoogleFonts.plusJakartaSans())),
+                  DropdownMenuItem(value: ConflictResolution.skip, child: Text('Skip', style: GoogleFonts.plusJakartaSans())),
+                ],
+                onChanged: (v) => setState(() => _conflict = v ?? ConflictResolution.keepBoth),
+                decoration: InputDecoration(
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide.none),
+                  filled: true,
+                  fillColor: colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+                ),
+              ),
+
+              const Gap(20),
+
+              _SectionLabel('Auto-Sync Interval'),
+              const Gap(8),
+              DropdownButtonFormField<Duration?>(
+                value: _interval,
+                items: _intervalOptions.entries
+                    .map((e) => DropdownMenuItem<Duration?>(
+                        value: e.value, child: Text(e.key, style: GoogleFonts.plusJakartaSans())))
+                    .toList(),
+                onChanged: (v) => setState(() => _interval = v),
+                decoration: InputDecoration(
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide.none),
+                  filled: true,
+                  fillColor: colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+                ),
+              ),
+
+              const Gap(32),
+
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton(
+                  onPressed: _canSave && !_saving ? _save : null,
+                  style: FilledButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                  ),
+                  child: _saving
+                      ? SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2, color: colorScheme.onPrimary),
+                        )
+                      : Text('Add Sync Folder', style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w600, fontSize: 16)),
+                ),
+              ),
             ],
-            selected: {_syncMode},
-            onSelectionChanged: (s) =>
-                setState(() => _syncMode = s.first),
           ),
-
-          const Gap(16),
-
-          // Conflict resolution
-          _SectionLabel('Conflict Resolution'),
-          const Gap(8),
-          DropdownButtonFormField<ConflictResolution>(
-            value: _conflict,
-            items: const [
-              DropdownMenuItem(
-                  value: ConflictResolution.keepBoth,
-                  child: Text('Keep both')),
-              DropdownMenuItem(
-                  value: ConflictResolution.replace,
-                  child: Text('Replace')),
-              DropdownMenuItem(
-                  value: ConflictResolution.skip,
-                  child: Text('Skip')),
-            ],
-            onChanged: (v) =>
-                setState(() => _conflict = v ?? ConflictResolution.keepBoth),
-            decoration: const InputDecoration(
-              border: OutlineInputBorder(),
-              isDense: true,
-            ),
-          ),
-
-          const Gap(16),
-
-          // Interval
-          _SectionLabel('Auto-Sync Interval'),
-          const Gap(8),
-          DropdownButtonFormField<Duration?>(
-            value: _interval,
-            items: _intervalOptions.entries
-                .map((e) => DropdownMenuItem<Duration?>(
-                    value: e.value, child: Text(e.key)))
-                .toList(),
-            onChanged: (v) => setState(() => _interval = v),
-            decoration: const InputDecoration(
-              border: OutlineInputBorder(),
-              isDense: true,
-            ),
-          ),
-
-          const Gap(24),
-
-          SizedBox(
-            width: double.infinity,
-            child: FilledButton(
-              onPressed: _canSave && !_saving ? _save : null,
-              child: _saving
-                  ? const SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Text('Add Sync Folder'),
-            ),
-          ),
-        ],
+        ),
       ),
     );
   }
 
-  bool get _canSave =>
-      _selectedPath != null && _selectedDevice != null;
+  bool get _canSave => _selectedPath != null && _selectedDevice != null;
 
   Future<void> _pickFolder() async {
     final path = await FilePicker.platform.getDirectoryPath();
@@ -447,9 +539,15 @@ class _SectionLabel extends StatelessWidget {
   const _SectionLabel(this.text);
 
   @override
-  Widget build(BuildContext context) => Text(
-        text,
-        style: const TextStyle(
-            fontSize: 12, fontWeight: FontWeight.w600, letterSpacing: 0.5),
-      );
+  Widget build(BuildContext context) {
+    return Text(
+      text,
+      style: GoogleFonts.plusJakartaSans(
+        fontSize: 13,
+        fontWeight: FontWeight.w700,
+        color: Theme.of(context).colorScheme.primary,
+        letterSpacing: 0.5,
+      ),
+    );
+  }
 }

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:gap/gap.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 
@@ -53,97 +54,124 @@ class _ReceiveScreenState extends ConsumerState<ReceiveScreen> {
         );
 
     return SafeArea(
-      child: CustomScrollView(
-        slivers: [
-          SliverAppBar(
-            floating: true,
-            title: const Text('Receive'),
-            actions: [
-              IconButton(
-                onPressed: () => showHelpGuide(context, title: 'Receive Help', items: receiveGuideItems),
-                icon: Icon(LucideIcons.helpCircle),
-                tooltip: 'Help',
+      child: ListView(
+        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+        children: [
+          // Header
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Expanded(
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    'Receive',
+                    style: GoogleFonts.outfit(
+                      fontSize: 48,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: -1.5,
+                      color: colorScheme.onSurface,
+                    ),
+                  ),
+                ),
               ),
-              IconButton(
-                onPressed: () => _showQRDialog(context, displayDevice),
-                icon: Icon(LucideIcons.qrCode),
-                tooltip: 'Show QR Code',
+              Row(
+                children: [
+                  IconButton(
+                    onPressed: () => _showQRDialog(context, displayDevice),
+                    icon: Icon(LucideIcons.qrCode, color: colorScheme.onSurfaceVariant),
+                  ),
+                  IconButton(
+                    onPressed: () => showHelpGuide(context, title: 'Receive Help', items: receiveGuideItems),
+                    icon: Icon(LucideIcons.helpCircle, color: colorScheme.onSurfaceVariant),
+                  ),
+                ],
               ),
             ],
           ),
-          SliverPadding(
-            padding: const EdgeInsets.symmetric(horizontal: 20),
-            sliver: SliverList.list(
+          const Gap(40),
+
+          // Radar & Status Hero Section
+          Center(
+            child: Column(
               children: [
-                const Gap(8),
-                // Device Card
-                DeviceCardWidget(
-                  device: displayDevice,
-                  onCopyAddress: () {
-                    Clipboard.setData(ClipboardData(
-                      text: displayDevice.fingerprint,
-                    ));
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('Fingerprint copied'),
-                        duration: Duration(seconds: 1),
-                      ),
-                    );
-                  },
-                ),
-                const Gap(16),
-                // Network status
-                _NetworkStatusChip(),
-                const Gap(24),
-                // Receive Mode
-                Text(
-                  'Receive Mode',
-                  style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                        fontWeight: FontWeight.w600,
-                      ),
-                ),
-                const Gap(12),
-                ReceiveModeSelector(
-                  mode: receiveMode,
-                  onChanged: (mode) {
-                    ref.read(receiveModeProvider.notifier).state = mode;
-                    // Enforce hidden mode on discovery
-                    ref.read(discoveryServiceProvider).hiddenMode =
-                        mode == ReceiveMode.hidden;
-                  },
-                ),
-                const Gap(24),
-                // Browser Receiver toggle
-                _BrowserReceiverToggle(),
+                _PulsingRadar(color: colorScheme.primary),
                 const Gap(32),
-                // Status indicator
-                Center(
-                  child: Column(
-                    children: [
-                      _PulsingRadar(color: colorScheme.primary),
-                      const Gap(16),
-                      Text(
-                        _statusText(receiveMode),
-                        style:
-                            Theme.of(context).textTheme.titleMedium?.copyWith(
-                                  fontWeight: FontWeight.w600,
-                                ),
-                      ),
-                      const Gap(4),
-                      Text(
-                        _statusSubtext(receiveMode),
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                              color: colorScheme.onSurfaceVariant,
-                            ),
-                        textAlign: TextAlign.center,
-                      ),
-                    ],
+                FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Text(
+                    _statusText(receiveMode),
+                    style: GoogleFonts.outfit(
+                      fontSize: 24,
+                      fontWeight: FontWeight.w700,
+                      color: colorScheme.onSurface,
+                    ),
                   ),
                 ),
-                const Gap(32),
+                const Gap(8),
+                Text(
+                  _statusSubtext(receiveMode),
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 14,
+                    color: colorScheme.onSurfaceVariant,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+                const Gap(24),
+                _NetworkStatusChip(),
               ],
             ),
           ),
+          const Gap(48),
+
+          // Device Card
+          DeviceCardWidget(
+            device: displayDevice,
+            onCopyAddress: () {
+              Clipboard.setData(ClipboardData(
+                text: displayDevice.fingerprint,
+              ));
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('Fingerprint copied'),
+                  duration: Duration(seconds: 1),
+                ),
+              );
+            },
+          ),
+          const Gap(48),
+
+          // Settings Section
+          Text(
+            'Settings',
+            style: GoogleFonts.outfit(
+              fontSize: 20,
+              fontWeight: FontWeight.w700,
+              color: colorScheme.onSurface,
+            ),
+          ),
+          const Gap(16),
+          Text(
+            'Visibility Mode',
+            style: GoogleFonts.plusJakartaSans(
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+              color: colorScheme.onSurfaceVariant,
+            ),
+          ),
+          const Gap(8),
+          ReceiveModeSelector(
+            mode: receiveMode,
+            onChanged: (mode) {
+              ref.read(receiveModeProvider.notifier).state = mode;
+              ref.read(discoveryServiceProvider).hiddenMode =
+                  mode == ReceiveMode.hidden;
+            },
+          ),
+          const Gap(24),
+          _BrowserReceiverToggle(),
+          const Gap(120), // Extra padding to clear floating nav bar
         ],
       ),
     );
@@ -165,27 +193,35 @@ class _ReceiveScreenState extends ConsumerState<ReceiveScreen> {
 
   void _showQRDialog(BuildContext context, DeviceModel device) async {
     final ip = await ref.read(networkServiceProvider).getLocalIp() ?? '';
+    if (!context.mounted) return;
     final qrData = 'sendate://${device.id}/${device.name}/${device.fingerprint}/$ip/${AppConstants.transferPort}';
 
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Scan to connect'),
-        content: SizedBox(
-          width: 250,
-          height: 250,
-          child: Center(
-            child: QrImageView(
-              data: qrData,
-              version: QrVersions.auto,
-              size: 220,
-              eyeStyle: QrEyeStyle(
-                eyeShape: QrEyeShape.square,
-                color: Theme.of(context).colorScheme.onSurface,
-              ),
-              dataModuleStyle: QrDataModuleStyle(
-                dataModuleShape: QrDataModuleShape.circle,
-                color: Theme.of(context).colorScheme.onSurface,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        title: Text(
+          'Scan to connect',
+          style: GoogleFonts.outfit(fontWeight: FontWeight.w700),
+          textAlign: TextAlign.center,
+        ),
+        content: SingleChildScrollView(
+          child: SizedBox(
+            width: 250,
+            height: 250,
+            child: Center(
+              child: QrImageView(
+                data: qrData,
+                version: QrVersions.auto,
+                size: 220,
+                eyeStyle: QrEyeStyle(
+                  eyeShape: QrEyeShape.square,
+                  color: Theme.of(context).colorScheme.onSurface,
+                ),
+                dataModuleStyle: QrDataModuleStyle(
+                  dataModuleShape: QrDataModuleShape.circle,
+                  color: Theme.of(context).colorScheme.onSurface,
+                ),
               ),
             ),
           ),
@@ -193,7 +229,10 @@ class _ReceiveScreenState extends ConsumerState<ReceiveScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('Close'),
+            child: Text(
+              'Close',
+              style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w600),
+            ),
           ),
         ],
       ),
@@ -232,23 +271,24 @@ class _PulsingRadarState extends State<_PulsingRadar>
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      width: 100,
-      height: 100,
+      width: 140,
+      height: 140,
       child: AnimatedBuilder(
         animation: _controller,
+        child: Center(
+          child: Icon(
+            LucideIcons.smartphone,
+            size: 32,
+            color: widget.color,
+          ),
+        ),
         builder: (context, child) {
           return CustomPaint(
             painter: _RadarPainter(
               progress: _controller.value,
               color: widget.color,
             ),
-            child: Center(
-              child: Icon(
-                LucideIcons.radio,
-                size: 32,
-                color: widget.color,
-              ),
-            ),
+            child: child,
           );
         },
       ),
@@ -270,15 +310,14 @@ class _RadarPainter extends CustomPainter {
     for (var i = 0; i < 3; i++) {
       final wave = (progress + i * 0.33) % 1.0;
       final radius = maxRadius * wave;
-      final opacity = (1.0 - wave) * 0.3;
+      final opacity = (1.0 - wave) * 0.4;
 
       canvas.drawCircle(
         center,
         radius,
         Paint()
           ..color = color.withValues(alpha: opacity)
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 2,
+          ..style = PaintingStyle.fill,
       );
     }
   }
@@ -303,49 +342,37 @@ class _NetworkStatusChip extends ConsumerWidget {
                 ip.startsWith('192.168.49.') ||
                 ip.startsWith('172.20.10.'));
 
-        return Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          decoration: BoxDecoration(
-            color: isDiscovering
-                ? colorScheme.primaryContainer.withValues(alpha: 0.3)
-                : colorScheme.surfaceContainerLow,
-            borderRadius: BorderRadius.circular(10),
-            border: Border.all(
-              color: colorScheme.outlineVariant.withValues(alpha: 0.5),
+        return Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              isHotspot ? LucideIcons.wifi : LucideIcons.wifi,
+              size: 16,
+              color: isDiscovering ? colorScheme.primary : colorScheme.onSurfaceVariant,
             ),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                isHotspot ? LucideIcons.wifi : LucideIcons.wifi,
-                size: 14,
+            const Gap(8),
+            Text(
+              ip != null
+                  ? '${isHotspot ? "Hotspot" : "WiFi"} • $ip'
+                  : 'No network',
+              style: GoogleFonts.plusJakartaSans(
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
                 color: isDiscovering ? colorScheme.primary : colorScheme.onSurfaceVariant,
               ),
-              const Gap(8),
-              Text(
-                ip != null
-                    ? '${isHotspot ? "Hotspot" : "WiFi"} • $ip'
-                    : 'No network',
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w500,
-                  color: colorScheme.onSurfaceVariant,
+            ),
+            if (isDiscovering) ...[
+              const Gap(12),
+              SizedBox(
+                width: 12,
+                height: 12,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: colorScheme.primary,
                 ),
               ),
-              if (isDiscovering) ...[
-                const Gap(8),
-                SizedBox(
-                  width: 10,
-                  height: 10,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 1.5,
-                    color: colorScheme.primary,
-                  ),
-                ),
-              ],
             ],
-          ),
+          ],
         );
       },
     );
@@ -389,8 +416,7 @@ class _BrowserReceiverToggleState
       }
       return;
     }
-    final ip =
-        await ref.read(networkServiceProvider).getLocalIp();
+    final ip = await ref.read(networkServiceProvider).getLocalIp();
     final urlBase = 'http://$ip:${service.port}';
     final receiverUrl =
         password != null ? '$urlBase?pwd=$password' : urlBase;
@@ -413,160 +439,203 @@ class _BrowserReceiverToggleState
     final password = ref.watch(browserReceiverPasswordProvider);
     final colorScheme = Theme.of(context).colorScheme;
 
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
           children: [
-            Row(
-              children: [
-                Icon(LucideIcons.globe, size: 18, color: colorScheme.primary),
-                const Gap(8),
-                const Expanded(
-                  child: Text(
-                    'Browser Receiver',
-                    style: TextStyle(
-                        fontWeight: FontWeight.w600, fontSize: 14),
-                  ),
-                ),
-                Switch(
-                  value: isActive,
-                  onChanged: (value) async {
-                    if (value) {
-                      await _start();
-                    } else {
-                      await _stop();
-                    }
-                  },
-                ),
-              ],
-            ),
-            // Password toggle (only when not active)
-            if (!isActive) ...[
-              const Gap(8),
-              Row(
+            Icon(LucideIcons.globe, size: 20, color: colorScheme.onSurface),
+            const Gap(12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Checkbox(
-                    value: _usePassword,
-                    visualDensity: VisualDensity.compact,
-                    onChanged: (v) =>
-                        setState(() => _usePassword = v ?? false),
+                  Text(
+                    'Browser Receiver',
+                    style: GoogleFonts.plusJakartaSans(
+                      fontWeight: FontWeight.w600,
+                      fontSize: 16,
+                    ),
                   ),
-                  const Text('Require password',
-                      style: TextStyle(fontSize: 13)),
+                  Text(
+                    'Receive files from any web browser',
+                    style: GoogleFonts.plusJakartaSans(
+                      color: colorScheme.onSurfaceVariant,
+                      fontSize: 13,
+                    ),
+                  ),
                 ],
               ),
-              if (_usePassword) ...[
-                const Gap(4),
-                TextField(
-                  controller: _passwordController,
-                  obscureText: !_showPassword,
-                  style: const TextStyle(fontSize: 13),
-                  decoration: InputDecoration(
-                    isDense: true,
-                    contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 12, vertical: 10),
-                    hintText: 'Enter password',
-                    border: const OutlineInputBorder(),
-                    suffixIcon: IconButton(
-                      icon: Icon(_showPassword
-                          ? LucideIcons.eyeOff
-                          : LucideIcons.eye),
-                      iconSize: 16,
-                      onPressed: () =>
-                          setState(() => _showPassword = !_showPassword),
-                    ),
-                  ),
-                ),
-              ],
-            ],
-            if (isActive && url != null) ...[
-              const Gap(8),
-              Container(
-                padding: const EdgeInsets.symmetric(
-                    horizontal: 12, vertical: 8),
-                decoration: BoxDecoration(
-                  color:
-                      colorScheme.primaryContainer.withValues(alpha: 0.3),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        // Show URL without embedded password
-                        url.contains('?pwd=')
-                            ? url.split('?pwd=').first
-                            : url,
-                        style: TextStyle(
-                            fontSize: 12,
-                            fontFamily: 'monospace',
-                            color: colorScheme.primary),
-                      ),
-                    ),
-                    GestureDetector(
-                      onTap: () {
-                        Clipboard.setData(ClipboardData(text: url));
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                              content: Text('URL copied'),
-                              duration: Duration(seconds: 1)),
-                        );
-                      },
-                      child: Icon(LucideIcons.copy,
-                          size: 16, color: colorScheme.primary),
-                    ),
-                  ],
-                ),
-              ),
-              if (password != null) ...[
-                const Gap(6),
-                Row(
-                  children: [
-                    Icon(LucideIcons.lock,
-                        size: 12,
-                        color: colorScheme.onSurfaceVariant),
-                    const Gap(4),
-                    Text(
-                      'Password protected',
-                      style: TextStyle(
-                          fontSize: 11,
-                          color: colorScheme.onSurfaceVariant),
-                    ),
-                    const Gap(8),
-                    GestureDetector(
-                      onTap: () {
-                        Clipboard.setData(
-                            ClipboardData(text: password));
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                              content: Text('Password copied'),
-                              duration: Duration(seconds: 1)),
-                        );
-                      },
-                      child: Text(
-                        'Copy password',
-                        style: TextStyle(
-                            fontSize: 11,
-                            color: colorScheme.primary,
-                            decoration: TextDecoration.underline),
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-              const Gap(4),
-              Text(
-                'Open this URL in any browser on the same network',
-                style: TextStyle(
-                    fontSize: 11,
-                    color: colorScheme.onSurfaceVariant),
-              ),
-            ],
+            ),
+            Switch(
+              value: isActive,
+              onChanged: (value) async {
+                if (value) {
+                  await _start();
+                } else {
+                  await _stop();
+                }
+              },
+            ),
           ],
         ),
-      ),
+        
+        AnimatedContainer(
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeOutCubic,
+          height: !isActive && _usePassword ? 100 : (!isActive ? 40 : 120),
+          child: SingleChildScrollView(
+            physics: const NeverScrollableScrollPhysics(),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Password setup (when off)
+                if (!isActive) ...[
+                  const Gap(12),
+                  Row(
+                    children: [
+                      SizedBox(
+                        width: 24,
+                        height: 24,
+                        child: Checkbox(
+                          value: _usePassword,
+                          visualDensity: VisualDensity.compact,
+                          onChanged: (v) =>
+                              setState(() => _usePassword = v ?? false),
+                        ),
+                      ),
+                      const Gap(8),
+                      Text(
+                        'Require password',
+                        style: GoogleFonts.plusJakartaSans(fontSize: 14),
+                      ),
+                    ],
+                  ),
+                  if (_usePassword) ...[
+                    const Gap(12),
+                    TextField(
+                      controller: _passwordController,
+                      obscureText: !_showPassword,
+                      style: GoogleFonts.plusJakartaSans(fontSize: 14),
+                      decoration: InputDecoration(
+                        isDense: true,
+                        contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 16, vertical: 12),
+                        hintText: 'Enter secure password',
+                        hintStyle: TextStyle(color: colorScheme.onSurfaceVariant),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: BorderSide(color: colorScheme.outlineVariant),
+                        ),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: BorderSide(color: colorScheme.outlineVariant),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: BorderSide(color: colorScheme.primary),
+                        ),
+                        suffixIcon: IconButton(
+                          icon: Icon(_showPassword
+                              ? LucideIcons.eyeOff
+                              : LucideIcons.eye),
+                          iconSize: 18,
+                          color: colorScheme.onSurfaceVariant,
+                          onPressed: () =>
+                              setState(() => _showPassword = !_showPassword),
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
+
+                // Active state details
+                if (isActive && url != null) ...[
+                  const Gap(16),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 16, vertical: 12),
+                    decoration: BoxDecoration(
+                      color: colorScheme.primaryContainer.withValues(alpha: 0.3),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            url.contains('?pwd=')
+                                ? url.split('?pwd=').first
+                                : url,
+                            style: GoogleFonts.plusJakartaSans(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
+                              color: colorScheme.primary,
+                            ),
+                          ),
+                        ),
+                        GestureDetector(
+                          onTap: () {
+                            Clipboard.setData(ClipboardData(text: url));
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                  content: Text('URL copied'),
+                                  duration: Duration(seconds: 1)),
+                            );
+                          },
+                          child: Icon(LucideIcons.copy,
+                              size: 18, color: colorScheme.primary),
+                        ),
+                      ],
+                    ),
+                  ),
+                  if (password != null) ...[
+                    const Gap(12),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      alignment: WrapAlignment.spaceBetween,
+                      children: [
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(LucideIcons.lock,
+                                size: 14, color: colorScheme.onSurfaceVariant),
+                            const Gap(6),
+                            Text(
+                              'Password protected',
+                              style: GoogleFonts.plusJakartaSans(
+                                  fontSize: 13,
+                                  color: colorScheme.onSurfaceVariant),
+                            ),
+                          ],
+                        ),
+                        GestureDetector(
+                          onTap: () {
+                            Clipboard.setData(
+                                ClipboardData(text: password));
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                  content: Text('Password copied'),
+                                  duration: Duration(seconds: 1)),
+                            );
+                          },
+                          child: Text(
+                            'Copy password',
+                            style: GoogleFonts.plusJakartaSans(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                                color: colorScheme.primary),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ],
+              ],
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

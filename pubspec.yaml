@@ -51,6 +51,7 @@ dependencies:
   lucide_icons:
     path: packages/lucide_icons
   local_auth: ^2.3.0
+  google_fonts: ^6.2.1
 
   # Conversion
   flutter_image_compress: ^2.3.0
