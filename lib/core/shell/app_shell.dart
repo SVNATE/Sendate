@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 
+import '../../shared/providers/discovery_provider.dart';
 import '../../shared/providers/transfer_provider.dart';
 import '../../shared/widgets/active_transfers_sheet.dart';
 
@@ -22,7 +23,12 @@ class AppShell extends ConsumerWidget {
     return 0;
   }
 
-  void _onTap(BuildContext context, int index) {
+  void _onTap(BuildContext context, WidgetRef ref, int index) {
+    if (index == 1 || index == 2) {
+      // Aggressively re-scan when entering Send or Devices tabs
+      ref.read(discoveryControllerProvider).restartDiscovery();
+    }
+    
     switch (index) {
       case 0:
         context.go('/receive');
@@ -60,7 +66,7 @@ class AppShell extends ConsumerWidget {
             bottom: 0,
             child: _FlushNavBar(
               currentIndex: index,
-              onTap: (i) => _onTap(context, i),
+              onTap: (i) => _onTap(context, ref, i),
             ),
           ),
         ],

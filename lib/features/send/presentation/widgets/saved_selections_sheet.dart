@@ -69,8 +69,8 @@ class SavedSelectionsSheet extends ConsumerWidget {
                   : ListView.builder(
                       controller: scrollController,
                       itemCount: selections.length,
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 12, vertical: 4),
+                      padding: const EdgeInsets.only(
+                          left: 12, right: 12, top: 4, bottom: 96),
                       itemBuilder: (context, index) {
                         return _SelectionTile(
                           selection: selections[index],

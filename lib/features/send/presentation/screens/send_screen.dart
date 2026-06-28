@@ -301,7 +301,7 @@ class _SendScreenState extends ConsumerState<SendScreen> {
       ),
       builder: (context) => SafeArea(
         child: Padding(
-          padding: const EdgeInsets.all(24),
+          padding: const EdgeInsets.only(left: 24, right: 24, top: 24, bottom: 104),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -616,40 +616,59 @@ class _NearbyDeviceTile extends StatelessWidget {
         color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.2),
         borderRadius: BorderRadius.circular(20),
         clipBehavior: Clip.antiAlias,
-      child: ListTile(
-        contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-        leading: DeviceAvatar(device: device, showTrustBadge: true),
-        title: Text(
-          device.name,
-          style: GoogleFonts.outfit(
-            fontSize: 18,
-            fontWeight: FontWeight.w600,
-            color: colorScheme.onSurface,
-          ),
-        ),
-        subtitle: Text(
-          '${device.deviceType.name} • ${device.ipAddress ?? ""}',
-          style: GoogleFonts.plusJakartaSans(
-            fontSize: 13,
-            color: colorScheme.onSurfaceVariant,
-          ),
-        ),
-        trailing: hasFiles
-            ? FilledButton(
-                onPressed: onTap,
-                style: FilledButton.styleFrom(
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                  padding: const EdgeInsets.symmetric(horizontal: 20),
-                ),
-                child: Text('Send', style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w600)),
-              )
-            : Icon(
-                LucideIcons.send,
-                color: colorScheme.primary.withValues(alpha: 0.5),
-                size: 20,
-              ),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      child: InkWell(
         onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+          child: Row(
+            children: [
+              DeviceAvatar(device: device, showTrustBadge: true),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      device.name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: GoogleFonts.outfit(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w600,
+                        color: colorScheme.onSurface,
+                      ),
+                    ),
+                    Text(
+                      '${device.deviceType.name} • ${device.ipAddress ?? ""}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: GoogleFonts.plusJakartaSans(
+                        fontSize: 13,
+                        color: colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 16),
+              hasFiles
+                  ? FilledButton(
+                      onPressed: onTap,
+                      style: FilledButton.styleFrom(
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                      ),
+                      child: Text('Send', style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w600)),
+                    )
+                  : Icon(
+                      LucideIcons.send,
+                      color: colorScheme.primary.withValues(alpha: 0.5),
+                      size: 20,
+                    ),
+            ],
+          ),
+        ),
       ),
       ),
     );

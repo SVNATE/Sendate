@@ -239,6 +239,8 @@ class TransferService {
     // BUG-07 FIX: keep the original transferId stable across retries so the
     // UI card doesn't disappear/reappear; the session object is replaced safely.
     String? existingTransferId,
+    String? batchId,
+    int? batchFileCount,
   }) async {
     var file = File(filePath);
     if (!await file.exists()) {
@@ -285,6 +287,8 @@ class TransferService {
       state: TransferState.connecting,
       startedAt: DateTime.now(),
       retryCount: retryCount,
+      batchId: batchId,
+      batchFileCount: batchFileCount,
     );
     _activeTransfers[transferId] = transfer;
     _emit(transfer);
@@ -320,6 +324,8 @@ class TransferService {
             encryptionEnabled ? base64Encode(sessionKey!) : null,
         'senderDeviceId': localDeviceId,
         'senderDeviceName': localDeviceName,
+        if (batchId != null) 'batchId': batchId,
+        if (batchFileCount != null) 'batchFileCount': batchFileCount,
       });
       final headerBytes = utf8.encode(header);
       socket.add(_intToBytes(headerBytes.length));
@@ -571,6 +577,8 @@ class TransferService {
               direction: TransferDirection.received,
               state: TransferState.waitingApproval,
               startedAt: DateTime.now(),
+              batchId: header['batchId'] as String?,
+              batchFileCount: header['batchFileCount'] as int?,
             );
             _activeTransfers[transferId!] = transfer!;
             _emit(transfer!);

@@ -33,6 +33,8 @@ class TransferModel {
   final int? duration; // milliseconds
   final int retryCount;
   final String? errorMessage;
+  final String? batchId;
+  final int? batchFileCount;
 
   const TransferModel({
     required this.id,
@@ -52,6 +54,8 @@ class TransferModel {
     this.duration,
     this.retryCount = 0,
     this.errorMessage,
+    this.batchId,
+    this.batchFileCount,
   });
 
   TransferModel copyWith({
@@ -66,6 +70,8 @@ class TransferModel {
     int? duration,
     int? retryCount,
     String? errorMessage,
+    String? batchId,
+    int? batchFileCount,
   }) {
     return TransferModel(
       id: id,
@@ -85,6 +91,8 @@ class TransferModel {
       duration: duration ?? this.duration,
       retryCount: retryCount ?? this.retryCount,
       errorMessage: errorMessage ?? this.errorMessage,
+      batchId: batchId ?? this.batchId,
+      batchFileCount: batchFileCount ?? this.batchFileCount,
     );
   }
 }

@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:async';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
@@ -28,6 +29,8 @@ import 'shared/providers/messaging_provider.dart';
 import 'shared/providers/settings_provider.dart';
 import 'shared/providers/transfer_service_provider.dart';
 import 'shared/widgets/device_selection_sheet.dart';
+
+final _pendingBatches = <String, Completer<bool>>{};
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -384,12 +387,58 @@ class _SendateAppState extends ConsumerState<SendateApp> {
         // Auto-accept if the global "Auto-Accept All" toggle is on
         if (autoAccept) return true;
 
-        return showTransferApprovalDialog(
+        if (transfer.batchId != null) {
+          if (_pendingBatches.containsKey(transfer.batchId)) {
+            return await _pendingBatches[transfer.batchId]!.future;
+          }
+          final completer = Completer<bool>();
+          _pendingBatches[transfer.batchId!] = completer;
+
+          final approved = await showTransferApprovalDialog(
+            fileName: transfer.fileName,
+            deviceName: transfer.deviceName,
+            fileSize: transfer.fileSize,
+            transferId: transfer.id,
+            batchFileCount: transfer.batchFileCount,
+          );
+          
+          completer.complete(approved);
+          // clean up after 1 minute so the map doesn't grow indefinitely
+          Future.delayed(const Duration(minutes: 1), () {
+            _pendingBatches.remove(transfer.batchId);
+          });
+          
+          if (approved) {
+             final context = globalNavigatorKey.currentContext;
+             if (context != null) {
+               context.push('/transfer-progress', extra: TransferProgressArgs(
+                 deviceIds: [transfer.deviceId],
+                 deviceName: transfer.deviceName,
+               ));
+             }
+          }
+          
+          return approved;
+        }
+
+        final approved = await showTransferApprovalDialog(
           fileName: transfer.fileName,
           deviceName: transfer.deviceName,
           fileSize: transfer.fileSize,
           transferId: transfer.id,
         );
+        
+        if (approved) {
+           final context = globalNavigatorKey.currentContext;
+           if (context != null) {
+             context.push('/transfer-progress', extra: TransferProgressArgs(
+               deviceIds: [transfer.deviceId],
+               deviceName: transfer.deviceName,
+             ));
+           }
+        }
+        
+        return approved;
       };
 
       // Wire cancel-from-notification → cancel the transfer in the service

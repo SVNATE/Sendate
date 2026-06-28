@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive/hive.dart';
+import 'package:uuid/uuid.dart';
 
 import '../../core/constants/app_constants.dart';
 import '../../services/bluetooth/bluetooth_transfer_service.dart';
@@ -212,6 +213,10 @@ class TransferController {
 
     final sentFiles = <String>[];
     final failedFiles = <String>[];
+    
+    // Generate a single batch ID for this group of files
+    final batchId = const Uuid().v4();
+    final batchFileCount = filePaths.length;
 
     // Split into batches of maxParallelTransfers and process concurrently.
     final batchSize = AppConstants.maxParallelTransfers;
@@ -226,7 +231,7 @@ class TransferController {
         batch.map((path) async {
           try {
             final result =
-                await _service.sendFile(filePath: path, target: target);
+                await _service.sendFile(filePath: path, target: target, batchId: batchId, batchFileCount: batchFileCount);
             return result;
           } catch (e) {
             // Return a synthetic failed model so the caller can count it.

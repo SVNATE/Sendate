@@ -87,6 +87,8 @@ class TransferHistoryNotifier extends StateNotifier<List<TransferModel>> {
                 ? DateTime.tryParse(map['completedAt'] as String)
                 : null,
             duration: map['duration'] as int?,
+            batchId: map['batchId'] as String?,
+            batchFileCount: map['batchFileCount'] as int?,
           ));
         } catch (e) {
           // Skip individual corrupt records; don't wipe the whole list.
@@ -143,6 +145,9 @@ class TransferHistoryNotifier extends StateNotifier<List<TransferModel>> {
       'startedAt': t.startedAt.toIso8601String(),
       'completedAt': t.completedAt?.toIso8601String(),
       'duration': t.duration,
+      'errorMessage': t.errorMessage,
+      'batchId': t.batchId,
+      'batchFileCount': t.batchFileCount,
     });
   }
 

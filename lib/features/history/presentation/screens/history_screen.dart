@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:gap/gap.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:lucide_icons/lucide_icons.dart';
+import 'package:open_filex/open_filex.dart';
 
 import '../../../../shared/models/transfer_model.dart';
 import '../../../../shared/providers/discovery_provider.dart';
@@ -96,7 +97,7 @@ class HistoryScreen extends ConsumerWidget {
       builder: (context) => SafeArea(
         child: SingleChildScrollView(
           child: Padding(
-            padding: const EdgeInsets.all(24),
+            padding: const EdgeInsets.only(left: 24, right: 24, top: 24, bottom: 104),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -162,6 +163,8 @@ class HistoryScreen extends ConsumerWidget {
     final bool failedReceive = transfer.direction == TransferDirection.received &&
         (transfer.state == TransferState.failed || transfer.state == TransferState.cancelled);
 
+    final bool canOpen = transfer.state == TransferState.completed && File(transfer.filePath).existsSync();
+
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -171,7 +174,7 @@ class HistoryScreen extends ConsumerWidget {
       builder: (ctx) => SafeArea(
         child: SingleChildScrollView(
           child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 32, horizontal: 24),
+            padding: const EdgeInsets.only(left: 24, right: 24, top: 32, bottom: 104),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -249,6 +252,20 @@ class HistoryScreen extends ConsumerWidget {
                       ),
                     ],
                   ),
+                ),
+                const Gap(16),
+              ],
+              if (canOpen) ...[
+                FilledButton.icon(
+                  icon: const Icon(LucideIcons.externalLink, size: 20),
+                  label: Text('Open File', style: GoogleFonts.plusJakartaSans(fontSize: 16, fontWeight: FontWeight.w600)),
+                  style: FilledButton.styleFrom(
+                    minimumSize: const Size(double.infinity, 56),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                  ),
+                  onPressed: () {
+                    OpenFilex.open(transfer.filePath);
+                  },
                 ),
                 const Gap(16),
               ],

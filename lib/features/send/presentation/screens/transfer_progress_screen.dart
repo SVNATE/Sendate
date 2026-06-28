@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:gap/gap.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:lucide_icons/lucide_icons.dart';
+import 'package:open_filex/open_filex.dart';
 
 import '../../../../core/theme/app_colors.dart';
 import '../../../../shared/models/transfer_model.dart';
@@ -77,16 +78,7 @@ class _TransferProgressScreenState extends ConsumerState<TransferProgressScreen>
   }
 
   void _checkAutoPop(List<TransferModel> batch) {
-    if (_hasAutoPopped || batch.isEmpty) return;
-    if (_allDone(batch)) {
-      final allOk = batch.every((t) => t.state == TransferState.completed);
-      if (allOk) {
-        _hasAutoPopped = true;
-        Future.delayed(const Duration(seconds: 2), () {
-          if (mounted) Navigator.of(context).pop();
-        });
-      }
-    }
+    // Deliberately disabled so the receiver/sender can view completed files and tap to open them.
   }
 
   Future<bool> _onWillPop(List<TransferModel> batch) async {
@@ -448,7 +440,11 @@ class _TransferCard extends ConsumerWidget {
         transfer.state == TransferState.connecting ||
         transfer.state == TransferState.queued;
 
-    return Container(
+    final canOpen = transfer.state == TransferState.completed &&
+        transfer.direction == TransferDirection.received &&
+        transfer.filePath.isNotEmpty;
+
+    Widget cardContent = Container(
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -504,46 +500,56 @@ class _TransferCard extends ConsumerWidget {
             const Gap(12),
           ],
           Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
             children: [
-              Text(
-                '${_fmt(transfer.bytesTransferred)} / ${_fmt(transfer.fileSize)}',
-                style: GoogleFonts.plusJakartaSans(
-                  fontSize: 13,
-                  color: colorScheme.onSurfaceVariant,
+              Expanded(
+                child: Wrap(
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  spacing: 12,
+                  runSpacing: 4,
+                  children: [
+                    Text(
+                      '${_fmt(transfer.bytesTransferred)} / ${_fmt(transfer.fileSize)}',
+                      style: GoogleFonts.plusJakartaSans(
+                        fontSize: 13,
+                        color: colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                    if (transfer.speed != null && transfer.speed! > 0)
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text('•', style: TextStyle(color: colorScheme.onSurfaceVariant)),
+                          const Gap(12),
+                          Text(
+                            '${_fmt(transfer.speed!)}/s',
+                            style: GoogleFonts.plusJakartaSans(
+                              fontSize: 13,
+                              color: colorScheme.onSurfaceVariant,
+                            ),
+                          ),
+                        ],
+                      ),
+                    if (_eta() != null)
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text('•', style: TextStyle(color: colorScheme.onSurfaceVariant)),
+                          const Gap(12),
+                          Text(
+                            _eta()!,
+                            style: GoogleFonts.plusJakartaSans(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                              color: colorScheme.primary,
+                            ),
+                          ),
+                        ],
+                      ),
+                  ],
                 ),
               ),
-              if (transfer.speed != null && transfer.speed! > 0) ...[
-                const Gap(12),
-                Text(
-                  '•',
-                  style: TextStyle(color: colorScheme.onSurfaceVariant),
-                ),
-                const Gap(12),
-                Text(
-                  '${_fmt(transfer.speed!)}/s',
-                  style: GoogleFonts.plusJakartaSans(
-                    fontSize: 13,
-                    color: colorScheme.onSurfaceVariant,
-                  ),
-                ),
-              ],
-              if (_eta() != null) ...[
-                const Gap(12),
-                Text(
-                  '•',
-                  style: TextStyle(color: colorScheme.onSurfaceVariant),
-                ),
-                const Gap(12),
-                Text(
-                  _eta()!,
-                  style: GoogleFonts.plusJakartaSans(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                    color: colorScheme.primary,
-                  ),
-                ),
-              ],
-              const Spacer(),
+              const Gap(8),
               if (isPausable)
                 _SmallIconButton(
                   icon: LucideIcons.pauseCircle,
@@ -565,6 +571,35 @@ class _TransferCard extends ConsumerWidget {
         ],
       ),
     );
+
+    if (canOpen) {
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 12),
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            borderRadius: BorderRadius.circular(20),
+            onTap: () {
+              OpenFilex.open(transfer.filePath);
+            },
+            child: Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.2),
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  (cardContent as Container).child!,
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+    return cardContent;
   }
 }
 
