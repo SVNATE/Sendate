@@ -37,33 +37,6 @@ class ClipboardSyncService {
   Stream<ClipboardMessage> get receivedClipboard => _receivedController.stream;
   bool get isAutoSyncEnabled => _autoSyncEnabled;
 
-  /// Initialize or retrieve a session key for clipboard encryption.
-  /// The key is generated once and stored locally.
-  Future<Uint8List> _getOrCreateSessionKey() async {
-    if (_sessionKey != null) return _sessionKey!;
-
-    try {
-      final box = Hive.box(AppConstants.settingsBox);
-      final storedKey = box.get('clipboard_session_key') as List<dynamic>?;
-      if (storedKey != null && storedKey.length == 32) {
-        _sessionKey = Uint8List.fromList(storedKey.cast<int>());
-        return _sessionKey!;
-      }
-    } catch (e) {
-      debugPrint('[ClipboardSync] Error reading stored key: $e');
-    }
-
-    // Generate a new key
-    _sessionKey = await _encryption.generateSessionKey();
-    try {
-      final box = Hive.box(AppConstants.settingsBox);
-      await box.put('clipboard_session_key', _sessionKey!.toList());
-    } catch (e) {
-      debugPrint('[ClipboardSync] Error storing session key: $e');
-    }
-    return _sessionKey!;
-  }
-
   /// Start clipboard monitoring using NATIVE listener
   void startAutoSync() {
     debugPrint('[ClipboardSync] === startAutoSync() called ===');
@@ -377,18 +350,8 @@ class ClipboardSyncService {
 
       Map<String, dynamic> json;
 
-      if (flags == 0x01) {
-        // Encrypted message — decrypt
-        final key = await _getOrCreateSessionKey();
-        final decrypted = await _encryption.decryptChunk(
-          Uint8List.fromList(payload),
-          key,
-        );
-        json = jsonDecode(utf8.decode(decrypted)) as Map<String, dynamic>;
-      } else {
-        // Legacy unencrypted message (backward compatibility)
-        json = jsonDecode(utf8.decode(payload)) as Map<String, dynamic>;
-      }
+      // Legacy unencrypted message (backward compatibility)
+      json = jsonDecode(utf8.decode(payload)) as Map<String, dynamic>;
 
       if (json['type'] == 'clipboard') {
         final content = json['content'] as String;

@@ -6,7 +6,9 @@ import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 
+import '../../../../core/utils/native_file_picker.dart';
 import '../../../../shared/models/device_model.dart';
+import '../../../../shared/models/sendate_file.dart';
 import '../../../../shared/providers/discovery_provider.dart';
 import '../../../../shared/providers/send_screen_providers.dart';
 import '../../../../shared/providers/transfer_service_provider.dart';
@@ -25,6 +27,8 @@ class SendScreen extends ConsumerStatefulWidget {
 }
 
 class _SendScreenState extends ConsumerState<SendScreen> {
+  bool _isPicking = false;
+
   @override
   void initState() {
     super.initState();
@@ -112,9 +116,9 @@ class _SendScreenState extends ConsumerState<SendScreen> {
               ),
               const Gap(16),
               _ContentTypeGrid(
-                onPickPhotos: () => _pickFiles(FileType.image),
-                onPickVideos: () => _pickFiles(FileType.video),
-                onPickFiles: () => _pickFiles(FileType.any),
+                onPickPhotos: () { if (!_isPicking) _pickFiles(); },
+                onPickVideos: () { if (!_isPicking) _pickFiles(); },
+                onPickFiles: () { if (!_isPicking) _pickFiles(); },
                 onPickFolder: _pickFolder,
                 onClipboard: _sendClipboard,
               ),
@@ -230,13 +234,18 @@ class _SendScreenState extends ConsumerState<SendScreen> {
     );
   }
 
-  Future<void> _pickFiles(FileType type) async {
-    final result = await FilePicker.platform.pickFiles(
-      type: type,
-      allowMultiple: true,
-    );
-    if (result != null && result.files.isNotEmpty) {
-      ref.read(selectedFilesProvider.notifier).state = result.files;
+  Future<void> _pickFiles() async {
+    setState(() => _isPicking = true);
+    
+    try {
+      final result = await NativeFilePicker.pickFiles();
+      if (result != null && result.isNotEmpty) {
+        ref.read(selectedFilesProvider.notifier).state = result;
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isPicking = false);
+      }
     }
   }
 
@@ -259,8 +268,8 @@ class _SendScreenState extends ConsumerState<SendScreen> {
     );
   }
 
-  Future<void> _saveSelection(BuildContext context, List<PlatformFile> files) async {
-    final paths = files.where((f) => f.path != null).map((f) => f.path!).toList();
+  Future<void> _saveSelection(BuildContext context, List<SendateFile> files) async {
+    final paths = files.map((f) => f.path).toList();
     if (paths.isEmpty) return;
     await showDialog<bool>(
       context: context,
@@ -357,14 +366,15 @@ class _SendScreenState extends ConsumerState<SendScreen> {
     );
   }
 
-  void _executeSend(DeviceModel device, List<PlatformFile> files) {
-    final controller = ref.read(transferControllerProvider);
-    final filePaths = files.where((f) => f.path != null).map((f) => f.path!).toList();
+  void _executeSend(DeviceModel device, List<SendateFile> files) {
+    if (files.isEmpty) return;
 
-    if (filePaths.isEmpty) return;
+    ref.read(transferServiceProvider).enqueueFiles(
+          files: files,
+          target: device,
+        );
 
     ref.read(selectedFilesProvider.notifier).state = [];
-    controller.sendFiles(filePaths: filePaths, target: device);
 
     context.push(
       '/transfer-progress',
@@ -375,18 +385,15 @@ class _SendScreenState extends ConsumerState<SendScreen> {
     );
   }
 
-  void _broadcastSend(List<DeviceModel> allDevices, Set<String> selectedIds, List<PlatformFile> files) {
+  void _broadcastSend(List<DeviceModel> allDevices, Set<String> selectedIds, List<SendateFile> files) {
+    if (files.isEmpty || selectedIds.isEmpty) return;
+
     final targets = allDevices.where((d) => selectedIds.contains(d.id)).toList();
-    if (targets.isEmpty) return;
-
-    final filePaths = files.where((f) => f.path != null).map((f) => f.path!).toList();
-    if (filePaths.isEmpty) return;
-
-    final controller = ref.read(transferControllerProvider);
+    final controller = ref.read(transferServiceProvider);
     final deviceIds = targets.map((t) => t.id).toList();
 
     for (final target in targets) {
-      controller.sendFiles(filePaths: filePaths, target: target);
+      controller.enqueueFiles(files: files, target: target);
     }
 
     ref.read(selectedFilesProvider.notifier).state = [];
@@ -473,7 +480,7 @@ class _ContentTypeGrid extends StatelessWidget {
 }
 
 class _SelectedFilesPreview extends StatelessWidget {
-  final List<PlatformFile> files;
+  final List<SendateFile> files;
   final VoidCallback onClear;
   final VoidCallback onSave;
 

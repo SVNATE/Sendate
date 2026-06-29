@@ -23,6 +23,8 @@ import androidx.core.content.ContextCompat
 import io.flutter.embedding.android.FlutterFragmentActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
+import android.provider.OpenableColumns
+import android.app.Activity
 import android.net.wifi.WifiManager
 import java.io.File
 import java.io.FileOutputStream
@@ -43,6 +45,7 @@ class MainActivity : FlutterFragmentActivity() {
     private val NOTIFICATION_LISTENER_CHANNEL = "com.svnate.sendate/notification_listener"
     private val OPEN_FILES_CHANNEL = "com.svnate.sendate/open_files"
     private val MULTICAST_CHANNEL = "com.svnate.sendate/multicast"
+    private val PICK_FILES_CHANNEL = "com.svnate.sendate/pick_files"
 
     private val BT_SPP_UUID: UUID =
         UUID.fromString("00001101-0000-1000-8000-00805F9B34FB") // Standard SPP UUID
@@ -63,6 +66,9 @@ class MainActivity : FlutterFragmentActivity() {
     private var openFilesChannel: MethodChannel? = null
     private var multicastChannel: MethodChannel? = null
     private var multicastLock: WifiManager.MulticastLock? = null
+    private var pickFilesChannel: MethodChannel? = null
+    private var pendingPickFilesResult: MethodChannel.Result? = null
+    private val REQUEST_CODE_PICK_FILES = 9999
 
     private val btReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
@@ -411,6 +417,23 @@ class MainActivity : FlutterFragmentActivity() {
         // Register the open-files channel (used by share_handler and direct VIEW intents)
         openFilesChannel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, OPEN_FILES_CHANNEL)
 
+        // --- Pick Files Channel ---
+        pickFilesChannel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, PICK_FILES_CHANNEL)
+        pickFilesChannel?.setMethodCallHandler { call, result ->
+            if (call.method == "pickFiles") {
+                pendingPickFilesResult = result
+                val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                    addCategory(Intent.CATEGORY_OPENABLE)
+                    putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
+                    type = "*/*"
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
+                }
+                startActivityForResult(intent, REQUEST_CODE_PICK_FILES)
+            } else {
+                result.notImplemented()
+            }
+        }
+
         // Flush any files that arrived before the engine was ready
         pendingSharedFiles?.let { files ->
             pendingSharedFiles = null
@@ -424,6 +447,64 @@ class MainActivity : FlutterFragmentActivity() {
     private var pendingNotificationAction: String? = null
     private var pendingSharedFiles: List<String>? = null
     private var clipboardManager: ClipboardManager? = null
+
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == REQUEST_CODE_PICK_FILES) {
+            if (resultCode == Activity.RESULT_CANCELED) {
+                pendingPickFilesResult?.error("CANCELED", "Canceled by user", null)
+                pendingPickFilesResult = null
+                return
+            }
+            if (resultCode != Activity.RESULT_OK || data == null) {
+                pendingPickFilesResult?.error("ERROR", "Failed to pick files", null)
+                pendingPickFilesResult = null
+                return
+            }
+
+            val uriList = mutableListOf<Uri>()
+            if (data.clipData != null) {
+                val clipData = data.clipData
+                for (i in 0 until clipData!!.itemCount) {
+                    uriList.add(clipData.getItemAt(i).uri)
+                }
+            } else if (data.data != null) {
+                uriList.add(data.data!!)
+            } else {
+                pendingPickFilesResult?.error("ERROR", "No files selected", null)
+                pendingPickFilesResult = null
+                return
+            }
+
+            val takeFlags: Int = data.flags and (Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+            val resultList = mutableListOf<Map<String, Any>>()
+
+            for (uri in uriList) {
+                try {
+                    contentResolver.takePersistableUriPermission(uri, takeFlags)
+                } catch (e: Exception) {
+                    // Ignore if we can't take persistable permission
+                }
+                contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME, OpenableColumns.SIZE), null, null, null)?.use { cursor ->
+                    if (cursor.moveToFirst()) {
+                        val nameIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                        val sizeIndex = cursor.getColumnIndex(OpenableColumns.SIZE)
+                        val name = if (nameIndex != -1) cursor.getString(nameIndex) else "Unknown"
+                        val size = if (sizeIndex != -1) cursor.getLong(sizeIndex) else 0L
+
+                        resultList.add(mapOf(
+                            "name" to name,
+                            "size" to size,
+                            "uri" to uri.toString()
+                        ))
+                    }
+                }
+            }
+
+            pendingPickFilesResult?.success(resultList)
+            pendingPickFilesResult = null
+        }
+    }
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)

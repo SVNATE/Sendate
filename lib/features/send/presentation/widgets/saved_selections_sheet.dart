@@ -1,12 +1,12 @@
 import 'dart:io';
 
-import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:gap/gap.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 
 import '../../../../features/send/domain/saved_selection_model.dart';
+import '../../../../shared/models/sendate_file.dart';
 import '../../../../shared/providers/saved_selections_provider.dart';
 import '../../../../shared/providers/send_screen_providers.dart';
 
@@ -116,18 +116,18 @@ class SavedSelectionsSheet extends ConsumerWidget {
       return;
     }
 
-    // Build PlatformFile list from existing paths
-    final platformFiles = existing.map((path) {
+    // Build SendateFile list from existing paths
+    final sendateFiles = existing.map((path) {
       final file = File(path);
       final name = path.split(Platform.pathSeparator).last;
-      return PlatformFile(
+      return SendateFile(
         name: name,
         path: path,
         size: file.existsSync() ? file.lengthSync() : 0,
       );
     }).toList();
 
-    ref.read(selectedFilesProvider.notifier).state = platformFiles;
+    ref.read(selectedFilesProvider.notifier).state = sendateFiles;
 
     if (missing.isNotEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(

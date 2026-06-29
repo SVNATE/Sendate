@@ -6,6 +6,7 @@ import 'package:hive/hive.dart';
 
 import '../../core/utils/logger.dart';
 import '../../shared/models/device_model.dart';
+import '../../shared/models/sendate_file.dart';
 import '../transfer/transfer_service.dart';
 
 enum SyncMode { oneWay, twoWay, manual }
@@ -167,7 +168,13 @@ class FolderSyncService {
       fingerprint: '',
     );
 
-    await transferService!.sendFile(filePath: filePath, target: target);
+    final sendateFile = SendateFile(
+      name: file.uri.pathSegments.last,
+      size: await file.length(),
+      path: filePath,
+    );
+
+    await transferService!.sendFile(file: sendateFile, target: target);
   }
 
   /// Compute file hash for diff detection (SHA-256)

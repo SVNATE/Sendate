@@ -3,10 +3,12 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:gap/gap.dart';
+import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 import 'package:open_filex/open_filex.dart';
 
+import '../../../../shared/models/sendate_file.dart';
 import '../../../../shared/models/transfer_model.dart';
 import '../../../../shared/providers/discovery_provider.dart';
 import '../../../../shared/providers/transfer_provider.dart';
@@ -222,8 +224,13 @@ class HistoryScreen extends ConsumerWidget {
                       }
                       return;
                     }
+                    final sendateFile = SendateFile(
+                      name: transfer.fileName,
+                      size: transfer.fileSize,
+                      path: transfer.filePath,
+                    );
                     ref.read(transferControllerProvider).sendFiles(
-                          filePaths: [transfer.filePath],
+                          files: [sendateFile],
                           target: target,
                         );
                   },

@@ -1,7 +1,6 @@
 import 'dart:io';
 import 'dart:async';
 
-import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_flutter/hive_flutter.dart';
@@ -10,9 +9,11 @@ import 'core/constants/app_constants.dart';
 import 'core/router/app_router.dart';
 import 'core/theme/app_theme.dart';
 import 'core/utils/global_navigator.dart';
+import 'core/utils/native_file_picker.dart';
 import 'features/onboarding/presentation/screens/onboarding_screen.dart';
 import 'features/settings/presentation/screens/app_lock_screen.dart';
 import 'services/device/device_identity_service.dart';
+import 'shared/models/sendate_file.dart';
 import 'services/expiry/transfer_expiry_service.dart';
 import 'services/share/incoming_share_service.dart';
 import 'features/send/presentation/screens/transfer_progress_screen.dart';
@@ -34,7 +35,7 @@ final _pendingBatches = <String, Completer<bool>>{};
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-
+  
   // Initialize Hive
   await Hive.initFlutter();
   await Hive.openBox(AppConstants.settingsBox);
@@ -190,18 +191,12 @@ class _SendateAppState extends ConsumerState<SendateApp> {
 
         if (device != null) {
           try {
-            final result = await FilePicker.platform.pickFiles(allowMultiple: true);
-            if (result != null && result.files.isNotEmpty) {
-              final filePaths = result.files
-                  .where((f) => f.path != null)
-                  .map((f) => f.path!)
-                  .toList();
-              if (filePaths.isNotEmpty) {
-                ref.read(transferControllerProvider).sendFiles(
-                  filePaths: filePaths,
-                  target: device,
-                );
-              }
+            final result = await NativeFilePicker.pickFiles();
+            if (result != null && result.isNotEmpty) {
+              ref.read(transferControllerProvider).sendFiles(
+                files: result,
+                target: device,
+              );
             }
           } catch (e) {
             debugPrint('[Main] Tray send files error: $e');
@@ -254,10 +249,8 @@ class _SendateAppState extends ConsumerState<SendateApp> {
         fgService.onSendFilesAction = () async {
           // Open file picker directly (no navigation needed)
           try {
-            final result = await FilePicker.platform.pickFiles(
-              allowMultiple: true,
-            );
-            if (result != null && result.files.isNotEmpty) {
+            final result = await NativeFilePicker.pickFiles();
+            if (result != null && result.isNotEmpty) {
               // Try nearby devices first, then trusted devices
               var devices = ref.read(allNearbyDevicesProvider);
               if (devices.isEmpty) {
@@ -265,25 +258,19 @@ class _SendateAppState extends ConsumerState<SendateApp> {
               }
               final device = devices.firstOrNull;
               if (device != null) {
-                final filePaths = result.files
-                    .where((f) => f.path != null)
-                    .map((f) => f.path!)
-                    .toList();
-                if (filePaths.isNotEmpty) {
-                  ref.read(transferControllerProvider).sendFiles(
-                    filePaths: filePaths,
-                    target: device,
+                ref.read(transferControllerProvider).sendFiles(
+                  files: result,
+                  target: device,
+                );
+                final context = globalNavigatorKey.currentContext;
+                if (context != null) {
+                  context.push(
+                    '/transfer-progress',
+                    extra: TransferProgressArgs(
+                      deviceIds: [device.id],
+                      deviceName: device.name,
+                    ),
                   );
-                  final context = globalNavigatorKey.currentContext;
-                  if (context != null) {
-                    context.push(
-                      '/transfer-progress',
-                      extra: TransferProgressArgs(
-                        deviceIds: [device.id],
-                        deviceName: device.name,
-                      ),
-                    );
-                  }
                 }
               }
             }
@@ -319,8 +306,14 @@ class _SendateAppState extends ConsumerState<SendateApp> {
           
           final device = await showDeviceSelectionSheet(context);
           if (device != null) {
+            final List<SendateFile> sendateFiles = filePaths.map((p) => SendateFile(
+              name: p.split(Platform.pathSeparator).last,
+              size: File(p).existsSync() ? File(p).lengthSync() : 0,
+              path: p,
+            )).toList();
+
             ref.read(transferControllerProvider).sendFiles(
-              filePaths: filePaths,
+              files: sendateFiles,
               target: device,
             );
           }
@@ -400,6 +393,7 @@ class _SendateAppState extends ConsumerState<SendateApp> {
             fileSize: transfer.fileSize,
             transferId: transfer.id,
             batchFileCount: transfer.batchFileCount,
+            transferStream: service.transferStream,
           );
           
           completer.complete(approved);
@@ -426,6 +420,7 @@ class _SendateAppState extends ConsumerState<SendateApp> {
           deviceName: transfer.deviceName,
           fileSize: transfer.fileSize,
           transferId: transfer.id,
+          transferStream: service.transferStream,
         );
         
         if (approved) {

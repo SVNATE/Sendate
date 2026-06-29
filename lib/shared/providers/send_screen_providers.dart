@@ -1,8 +1,8 @@
-import 'package:file_picker/file_picker.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../models/sendate_file.dart';
 
 /// Selected files to send — shared across SendScreen and SavedSelectionsSheet.
-final selectedFilesProvider = StateProvider<List<PlatformFile>>((ref) => []);
+final selectedFilesProvider = StateProvider<List<SendateFile>>((ref) => []);
 
 /// Broadcast mode — allow selecting multiple target devices.
 final broadcastModeProvider = StateProvider<bool>((ref) => false);

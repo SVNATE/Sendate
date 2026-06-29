@@ -5,11 +5,14 @@ import 'dart:typed_data';
 
 import 'package:hive/hive.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:uri_content/uri_content.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../core/constants/app_constants.dart';
 import '../../core/utils/logger.dart';
 import '../../shared/models/device_model.dart';
+import '../../shared/models/sendate_file.dart';
 import '../../shared/models/transfer_model.dart';
 import '../conversion/conversion_service.dart';
 import '../security/encryption_service.dart';
@@ -21,9 +24,10 @@ import 'package:wakelock_plus/wakelock_plus.dart';
 class _TransferSession {
   final String id;
   Socket? socket;
-  bool isPaused = false;
   bool isCancelled = false;
+  bool isPaused = false;
   Completer<void>? _pauseCompleter;
+  void Function()? onCancel;
 
   _TransferSession(this.id);
 
@@ -42,21 +46,21 @@ class _TransferSession {
 
   void cancel() {
     isCancelled = true;
-    resume();
-    socket?.destroy();
+    resume(); // in case it's paused
+    onCancel?.call(); // trigger socket kill
   }
 }
 
 enum TransferPriority { high, normal, low }
 
 class _QueueItem {
-  final String filePath;
+  final SendateFile file;
   final DeviceModel target;
   final TransferPriority priority;
   final DateTime? scheduledAt;
 
   _QueueItem({
-    required this.filePath,
+    required this.file,
     required this.target,
     this.priority = TransferPriority.normal,
     // ignore: unused_element_parameter
@@ -71,13 +75,14 @@ class _QueueItem {
 // ---------------------------------------------------------------------------
 class TransferService {
   final _log = const AppLogger('Transfer');
-  ServerSocket? _server;
+  dynamic _server;
   final _transferController = StreamController<TransferModel>.broadcast();
   final Map<String, TransferModel> _activeTransfers = {};
   final Map<String, _TransferSession> _sessions = {};
   final List<_QueueItem> _queue = [];
   final ConversionService _conversionService = ConversionService();
   final EncryptionService _encryptionService = EncryptionService();
+  final _uriContent = UriContent();
 
   // BUG-11 FIX: mutex so concurrent receives can't claim the same path
   final _savePathLock = <String, bool>{};
@@ -110,10 +115,20 @@ class TransferService {
 
   Future<void> startServer() async {
     if (_isListening) return;
+
+    SecurityContextData? contextData;
+    if (encryptionEnabled) {
+      contextData = await _encryptionService.generateSecurityContext();
+    }
+
     for (var portOffset = 0; portOffset < 3; portOffset++) {
       try {
         final port = AppConstants.transferPort + portOffset;
-        _server = await ServerSocket.bind(InternetAddress.anyIPv4, port);
+        if (encryptionEnabled && contextData != null) {
+          _server = await SecureServerSocket.bind(InternetAddress.anyIPv4, port, contextData.context);
+        } else {
+          _server = await ServerSocket.bind(InternetAddress.anyIPv4, port);
+        }
         _isListening = true;
         _server!.listen(_handleIncoming);
         if (portOffset > 0) {
@@ -140,30 +155,30 @@ class TransferService {
   // -------------------------------------------------------------------------
 
   void enqueueFiles({
-    required List<String> filePaths,
+    required List<SendateFile> files,
     required DeviceModel target,
     TransferPriority priority = TransferPriority.normal,
   }) {
-    for (final path in filePaths) {
-      _queue.add(_QueueItem(filePath: path, target: target, priority: priority));
+    for (final file in files) {
+      _queue.add(_QueueItem(file: file, target: target, priority: priority));
     }
     _queue.sort((a, b) => a.priority.index.compareTo(b.priority.index));
     _processQueue();
   }
 
   void scheduleTransfer({
-    required List<String> filePaths,
+    required List<SendateFile> files,
     required DeviceModel target,
     required DateTime scheduledAt,
     TransferPriority priority = TransferPriority.normal,
   }) {
     final delay = scheduledAt.difference(DateTime.now());
     if (delay.isNegative) {
-      enqueueFiles(filePaths: filePaths, target: target, priority: priority);
+      enqueueFiles(files: files, target: target, priority: priority);
       return;
     }
     Future.delayed(delay, () {
-      enqueueFiles(filePaths: filePaths, target: target, priority: priority);
+      enqueueFiles(files: files, target: target, priority: priority);
     });
   }
 
@@ -186,7 +201,7 @@ class TransferService {
         if (item.scheduledAt != null &&
             item.scheduledAt!.isAfter(DateTime.now())) {
           scheduleTransfer(
-            filePaths: [item.filePath],
+            files: [item.file],
             target: item.target,
             scheduledAt: item.scheduledAt!,
             priority: item.priority,
@@ -195,11 +210,11 @@ class TransferService {
         }
 
         inFlight++;
-        sendFile(filePath: item.filePath, target: item.target)
+        sendFile(file: item.file, target: item.target)
             .catchError((_) => TransferModel(
                   id: '',
-                  fileName: item.filePath.split('/').last,
-                  filePath: item.filePath,
+                  fileName: item.file.name,
+                  filePath: item.file.path,
                   fileSize: 0,
                   mimeType: '',
                   deviceId: item.target.id,
@@ -233,7 +248,7 @@ class TransferService {
   // -------------------------------------------------------------------------
 
   Future<TransferModel> sendFile({
-    required String filePath,
+    required SendateFile file,
     required DeviceModel target,
     int retryCount = 0,
     // BUG-07 FIX: keep the original transferId stable across retries so the
@@ -242,43 +257,43 @@ class TransferService {
     String? batchId,
     int? batchFileCount,
   }) async {
-    var file = File(filePath);
-    if (!await file.exists()) {
-      throw FileSystemException('File not found', filePath);
-    }
-
-    var fileName = file.uri.pathSegments.last;
+    var fileName = file.name;
     var mimeType = _guessMimeType(fileName);
+    var finalPath = file.path;
+    var fileSize = file.size;
 
-    if (autoConvertEnabled) {
+    if (autoConvertEnabled && !file.path.startsWith('content://')) {
       final platform = targetPlatform ?? 'android';
       final convertedPath = await _conversionService.autoConvert(
-        filePath: filePath,
+        filePath: finalPath,
         mimeType: mimeType,
         fileName: fileName,
         targetPlatform: platform,
       );
-      if (convertedPath != filePath) {
-        file = File(convertedPath);
-        fileName = file.uri.pathSegments.last;
+      if (convertedPath != finalPath) {
+        final f = File(convertedPath);
+        finalPath = f.path;
+        fileName = f.uri.pathSegments.last;
         mimeType = _guessMimeType(fileName);
+        fileSize = await f.length();
       }
     }
-
-    final fileSize = await file.length();
 
     // BUG-07 FIX: reuse the same transferId across retries so the UI
     // does not create a phantom duplicate entry.
     final transferId = existingTransferId ?? const Uuid().v4();
-
-    // BUG-07 FIX: always create a fresh session object for each attempt.
     final session = _TransferSession(transferId);
+    session.onCancel = () {
+      try {
+        session.socket?.destroy();
+      } catch (_) {}
+    };
     _sessions[transferId] = session;
 
     var transfer = TransferModel(
       id: transferId,
       fileName: fileName,
-      filePath: file.path,
+      filePath: finalPath,
       fileSize: fileSize,
       mimeType: mimeType,
       deviceId: target.id,
@@ -294,22 +309,26 @@ class TransferService {
     _emit(transfer);
 
     try {
-      final socket = await Socket.connect(
-        target.ipAddress!,
-        target.port ?? AppConstants.transferPort,
-        timeout: Duration(seconds: AppConstants.transferTimeout),
-      );
+      Socket socket;
+      if (encryptionEnabled) {
+        socket = await SecureSocket.connect(
+          target.ipAddress!,
+          target.port ?? AppConstants.transferPort,
+          timeout: Duration(seconds: AppConstants.transferTimeout),
+          onBadCertificate: (cert) => true, // Accept receiver's self-signed certificate
+        );
+      } else {
+        socket = await Socket.connect(
+          target.ipAddress!,
+          target.port ?? AppConstants.transferPort,
+          timeout: Duration(seconds: AppConstants.transferTimeout),
+        );
+      }
       session.socket = socket;
 
       if (session.isCancelled) {
         socket.destroy();
         return _finishTransfer(transfer, TransferState.cancelled);
-      }
-
-      // Generate session key for encryption
-      Uint8List? sessionKey;
-      if (encryptionEnabled) {
-        sessionKey = await _encryptionService.generateSessionKey();
       }
 
       // Send [4-byte header length][JSON header]
@@ -320,8 +339,6 @@ class TransferService {
         'mimeType': mimeType,
         'chunkSize': AppConstants.defaultChunkSize,
         'encrypted': encryptionEnabled,
-        'sessionKey':
-            encryptionEnabled ? base64Encode(sessionKey!) : null,
         'senderDeviceId': localDeviceId,
         'senderDeviceName': localDeviceName,
         if (batchId != null) 'batchId': batchId,
@@ -348,8 +365,17 @@ class TransferService {
       _activeTransfers[transferId] = transfer;
       _emit(transfer);
 
-      final fileStream = file.openRead();
+      final Stream<List<int>> fileStream;
+      if (file.bytes != null) {
+        fileStream = Stream.value(file.bytes!);
+      } else if (finalPath.startsWith('content://')) {
+        fileStream = _uriContent.getContentStream(Uri.parse(finalPath));
+      } else {
+        fileStream = File(finalPath).openRead();
+      }
+
       int bytesSent = 0;
+      int unwrittenBytes = 0;
       final stopwatch = Stopwatch()..start();
 
       await for (final chunk in fileStream) {
@@ -374,21 +400,17 @@ class TransferService {
           stopwatch.start();
         }
 
-        if (encryptionEnabled && sessionKey != null) {
-          // BUG-03 FIX: encryptChunk() already packs nonce+mac+ciphertext.
-          // Do NOT add a separate length prefix — the receiver reads the
-          // packed format directly.  We send the packed bytes as-is.
-          final packed =
-              await _encryptionService.encryptChunk(
-                  Uint8List.fromList(chunk), sessionKey);
-          // Send: [4-byte packed-chunk length][packed chunk]
-          socket.add(_intToBytes(packed.length));
-          socket.add(packed);
-        } else {
-          socket.add(chunk);
-        }
-        await socket.flush();
+        // SecureSocket automatically encrypts Native TLS payloads with zero overhead!
+        socket.add(chunk);
+        
         bytesSent += chunk.length;
+        unwrittenBytes += chunk.length;
+
+        // Flush only every 8MB to maximize network throughput while preventing OOM
+        if (unwrittenBytes >= 8 * 1024 * 1024) {
+          await socket.flush();
+          unwrittenBytes = 0;
+        }
 
         // Bandwidth throttle
         if (bandwidthLimitBytesPerSec > 0) {
@@ -413,7 +435,7 @@ class TransferService {
         _emit(transfer);
 
         if (bytesSent % (AppConstants.defaultChunkSize * 10) == 0) {
-          _saveResumeData(transferId, bytesSent, filePath, target);
+          _saveResumeData(transferId, bytesSent, finalPath, target);
         }
       }
 
@@ -450,7 +472,7 @@ class TransferService {
         await Future.delayed(Duration(seconds: 2 * (retryCount + 1)));
         // BUG-07 FIX: pass the same transferId so the UI entry is stable.
         return sendFile(
-          filePath: filePath,
+          file: file,
           target: target,
           retryCount: retryCount + 1,
           existingTransferId: transferId,
@@ -526,14 +548,21 @@ class TransferService {
     // Encrypted chunk framing state
     int? pendingChunkLen;
     StreamSubscription<Uint8List>? subscription;
+    bool isProcessing = false;
 
     subscription = socket.listen(
       (data) async {
-        subscription?.pause();
         buffer.addAll(data);
 
+        if (isProcessing) return;
+        isProcessing = true;
+        subscription?.pause();
+
         try {
-          // Step 1: read 4-byte header length
+          while (true) {
+            int startLen = buffer.length;
+
+            // Step 1: read 4-byte header length
           if (!headerRead) {
             if (buffer.length < 4) return;
             headerLength = _bytesToInt(buffer.sublist(0, 4));
@@ -560,11 +589,6 @@ class TransferService {
                 socket.remoteAddress.address;
             senderDeviceName = header['senderDeviceName'] as String? ??
                 socket.remoteAddress.address;
-
-            if (isEncrypted! && header['sessionKey'] != null) {
-              sessionKey =
-                  base64Decode(header['sessionKey'] as String);
-            }
 
             transfer = TransferModel(
               id: transferId!,
@@ -612,26 +636,7 @@ class TransferService {
             receiving = true;
             transferId$.complete(savePath);
 
-            // Process any bytes that already arrived
-            if (buffer.isNotEmpty) {
-              pendingChunkLen = await _processBodyBytes(
-                buffer: buffer,
-                isEncrypted: isEncrypted!,
-                sessionKey: sessionKey,
-                sink: sink!,
-                stopwatch: stopwatch!,
-                fileSize: fileSize!,
-                transfer: transfer!,
-                transferId: transferId!,
-                pendingChunkLen: pendingChunkLen,
-                onProgress: (t) {
-                  transfer = t;
-                  bytesReceived = t.bytesTransferred;
-                  _activeTransfers[transferId!] = t;
-                  _emit(t);
-                },
-              );
-            }
+
           } else if (approvalSent && receiving && sink != null) {
             // Step 3: stream body bytes
             pendingChunkLen = await _processBodyBytes(
@@ -652,7 +657,10 @@ class TransferService {
               },
             );
           }
-        } catch (e) {
+          
+          if (buffer.length == startLen) break;
+        } // end while(true)
+      } catch (e) {
           _log.debug('Receive data error: $e');
           socket.destroy();
           if (transfer != null) {
@@ -660,11 +668,17 @@ class TransferService {
                 error: e.toString());
           }
         } finally {
+          isProcessing = false;
           subscription?.resume();
         }
       },
       onDone: () async {
-        if (transfer == null || sink == null) return;
+        if (transfer == null) return;
+        if (sink == null) {
+          // Socket disconnected during approval dialog
+          _finishTransfer(transfer!, TransferState.failed, error: 'Connection closed by sender');
+          return;
+        }
         try {
           await sink!.flush();
           await sink!.close();
@@ -699,7 +713,7 @@ class TransferService {
       onError: (e) {
         _log.debug('Incoming socket error: $e');
         socket.destroy();
-        if (transfer != null && sink != null) {
+        if (transfer != null) {
           _finishTransfer(transfer!, TransferState.failed,
               error: e.toString());
         }
@@ -709,7 +723,7 @@ class TransferService {
   }
 
   /// Process body bytes from [buffer] in-place, handling both plain and
-  /// encrypted framing.  Clears consumed bytes from buffer.
+  /// TLS encrypted framing natively. Clears consumed bytes from buffer.
   Future<int?> _processBodyBytes({
     required List<int> buffer,
     required bool isEncrypted,
@@ -722,58 +736,25 @@ class TransferService {
     required int? pendingChunkLen,
     required void Function(TransferModel updated) onProgress,
   }) async {
-    if (isEncrypted && sessionKey != null) {
-      // Framing: [4-byte packed-len][packed chunk] …
-      while (true) {
-        int? chunkLen = pendingChunkLen;
-        if (chunkLen == null) {
-          if (buffer.length < 4) return pendingChunkLen;
-          chunkLen = _bytesToInt(buffer.sublist(0, 4));
-          buffer.removeRange(0, 4);
-          pendingChunkLen = chunkLen;
-        }
-        if (buffer.length < chunkLen) return pendingChunkLen;
+    // Both plain and TLS sockets deliver decrypted raw bytes directly!
+    if (buffer.isEmpty) return null;
+    
+    final chunk = List<int>.from(buffer);
+    buffer.clear();
+    sink.add(chunk);
 
-        final packed =
-            Uint8List.fromList(buffer.sublist(0, chunkLen));
-        buffer.removeRange(0, chunkLen);
-        pendingChunkLen = null;
-
-        // Decrypt asynchronously but await sequentially to preserve order
-        final decrypted = await _encryptionService.decryptChunk(packed, sessionKey);
-        
-        sink.add(decrypted);
-        await sink.flush(); // Prevent OOM for large files
-
-        final newBytes = transfer.bytesTransferred + decrypted.length;
-        final elapsed = stopwatch.elapsedMilliseconds;
-        final speed = elapsed > 0 ? (newBytes * 1000) ~/ elapsed : 0;
-        transfer = transfer.copyWith(
-          progress: (newBytes / fileSize).clamp(0.0, 1.0),
-          bytesTransferred: newBytes,
-          speed: speed,
-        );
-        onProgress(transfer);
-      }
-    } else {
-      // Plain: raw bytes
-      if (buffer.isEmpty) return null;
-      final chunk = List<int>.from(buffer);
-      buffer.clear();
-      sink.add(chunk);
-      await sink.flush(); // Prevent OOM for large files
-
-      final newBytes = transfer.bytesTransferred + chunk.length;
-      final elapsed = stopwatch.elapsedMilliseconds;
-      final speed = elapsed > 0 ? (newBytes * 1000) ~/ elapsed : 0;
-      final updated = transfer.copyWith(
-        progress: (newBytes / fileSize).clamp(0.0, 1.0),
-        bytesTransferred: newBytes,
-        speed: speed,
-      );
-      onProgress(updated);
-    }
-    return pendingChunkLen;
+    final newBytes = transfer.bytesTransferred + chunk.length;
+    final elapsed = stopwatch.elapsedMilliseconds;
+    final speed = elapsed > 0 ? (newBytes * 1000) ~/ elapsed : 0;
+    
+    final updated = transfer.copyWith(
+      progress: (newBytes / fileSize).clamp(0.0, 1.0),
+      bytesTransferred: newBytes,
+      speed: speed,
+    );
+    onProgress(updated);
+    
+    return null;
   }
 
   // -------------------------------------------------------------------------
@@ -872,16 +853,21 @@ class TransferService {
     } catch (e) {
       _log.debug('Save path resolution failed: $e');
     }
-    try {
-      final downloadsDir = await getDownloadsDirectory();
-      if (downloadsDir != null) {
-        if (!await downloadsDir.exists()) {
-          await downloadsDir.create(recursive: true);
+    
+    // On iOS, Downloads directory is often not directly writable without special entitlements.
+    // We should skip the Downloads directory fallback on iOS and go straight to App Documents.
+    if (!Platform.isIOS) {
+      try {
+        final downloadsDir = await getDownloadsDirectory();
+        if (downloadsDir != null) {
+          if (!await downloadsDir.exists()) {
+            await downloadsDir.create(recursive: true);
+          }
+          return '${downloadsDir.path}/$fileName';
         }
-        return '${downloadsDir.path}/$fileName';
+      } catch (e) {
+        _log.debug('Downloads directory fallback failed: $e');
       }
-    } catch (e) {
-      _log.debug('Downloads directory fallback failed: $e');
     }
     try {
       final appDir = await getApplicationDocumentsDirectory();

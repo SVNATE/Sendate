@@ -11,6 +11,7 @@ import '../../services/bluetooth/bluetooth_transfer_service.dart';
 import '../../services/notification/notification_service.dart';
 import '../../services/transfer/transfer_service.dart';
 import '../models/device_model.dart';
+import '../models/sendate_file.dart';
 import '../models/transfer_model.dart';
 import 'settings_provider.dart';
 import 'transfer_provider.dart';
@@ -192,10 +193,10 @@ class TransferController {
 
   /// Send a single file.
   Future<TransferModel> sendFile({
-    required String filePath,
+    required SendateFile file,
     required DeviceModel target,
   }) async {
-    return _service.sendFile(filePath: filePath, target: target);
+    return _service.sendFile(file: file, target: target);
   }
 
   // BUG-01 FIX: send multiple files in parallel (up to maxParallelTransfers)
@@ -205,7 +206,7 @@ class TransferController {
   // BUG-10 FIX: autoConvert is synced before each batch, and the batch-
   // complete notification is always fired.
   Future<void> sendFiles({
-    required List<String> filePaths,
+    required List<SendateFile> files,
     required DeviceModel target,
     TransferPriority priority = TransferPriority.normal,
   }) async {
@@ -216,30 +217,30 @@ class TransferController {
     
     // Generate a single batch ID for this group of files
     final batchId = const Uuid().v4();
-    final batchFileCount = filePaths.length;
+    final batchFileCount = files.length;
 
     // Split into batches of maxParallelTransfers and process concurrently.
     final batchSize = AppConstants.maxParallelTransfers;
-    for (var i = 0; i < filePaths.length; i += batchSize) {
-      final batch = filePaths.sublist(
+    for (var i = 0; i < files.length; i += batchSize) {
+      final batch = files.sublist(
           i,
-          (i + batchSize) > filePaths.length
-              ? filePaths.length
+          (i + batchSize) > files.length
+              ? files.length
               : i + batchSize);
 
       final results = await Future.wait(
-        batch.map((path) async {
+        batch.map((file) async {
           try {
             final result =
-                await _service.sendFile(filePath: path, target: target, batchId: batchId, batchFileCount: batchFileCount);
+                await _service.sendFile(file: file, target: target, batchId: batchId, batchFileCount: batchFileCount);
             return result;
           } catch (e) {
             // Return a synthetic failed model so the caller can count it.
             return TransferModel(
               id: '',
-              fileName: path.split('/').last,
-              filePath: path,
-              fileSize: 0,
+              fileName: file.name,
+              filePath: file.path,
+              fileSize: file.size,
               mimeType: '',
               deviceId: target.id,
               deviceName: target.name,
@@ -271,7 +272,7 @@ class TransferController {
   // BUG-10 FIX: sync autoConvert before scheduling; batch notification is
   // sent via the queue's onBatchComplete callback (wired in service layer).
   void scheduleFiles({
-    required List<String> filePaths,
+    required List<SendateFile> files,
     required DeviceModel target,
     required DateTime scheduledAt,
     TransferPriority priority = TransferPriority.normal,
@@ -279,7 +280,7 @@ class TransferController {
     // Sync the convert flag now so it's already set when the timer fires.
     _service.autoConvertEnabled = _ref.read(autoConvertProvider);
     _service.scheduleTransfer(
-      filePaths: filePaths,
+      files: files,
       target: target,
       scheduledAt: scheduledAt,
       priority: priority,

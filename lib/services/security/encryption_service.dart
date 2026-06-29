@@ -1,25 +1,63 @@
 import 'dart:convert';
-import 'dart:math';
+import 'dart:io';
+import 'dart:isolate';
 import 'dart:typed_data';
 
-import 'package:cryptography/cryptography.dart';
+import 'package:basic_utils/basic_utils.dart';
+import 'package:crypto/crypto.dart';
 
-/// Real AES-256-GCM encryption for file transfer.
+class SecurityContextData {
+  final SecurityContext context;
+  final String certificateHash;
+
+  SecurityContextData({
+    required this.context,
+    required this.certificateHash,
+  });
+}
+
+/// Provides native TLS Encryption for file transfer using Dart's SecureSocket.
+/// This replaces the slow manual cryptography_flutter chunking.
 class EncryptionService {
-  final _aesGcm = AesGcm.with256bits();
+  SecurityContextData? _cachedContext;
 
-  /// Generate a new random 256-bit session key
-  Future<Uint8List> generateSessionKey() async {
-    final secretKey = await _aesGcm.newSecretKey();
-    final bytes = await secretKey.extractBytes();
-    return Uint8List.fromList(bytes);
+  /// Generate a new self-signed X.509 certificate and SecurityContext
+  /// This is run in an isolate to avoid blocking the main UI thread during RSA generation.
+  Future<SecurityContextData> generateSecurityContext() async {
+    if (_cachedContext != null) return _cachedContext!;
+
+    final pemData = await Isolate.run(_generatePems);
+
+    final context = SecurityContext()
+      ..usePrivateKeyBytes(utf8.encode(pemData.privateKey))
+      ..useCertificateChainBytes(utf8.encode(pemData.certificate));
+
+    _cachedContext = SecurityContextData(
+      context: context,
+      certificateHash: pemData.hash,
+    );
+
+    return _cachedContext!;
   }
 
-  /// Generate a device fingerprint from a key/identifier
+  /// Extracts the SHA-256 hash (fingerprint) of the certificate to use as the device ID/auth token
+  static String calculateCertificateHash(String certificatePem) {
+    final pemContent = certificatePem
+        .replaceAll('\r\n', '\n')
+        .split('\n')
+        .where((line) => line.isNotEmpty && !line.startsWith('---'))
+        .join();
+    final der = base64Decode(pemContent);
+    final digest = sha256.convert(der);
+    
+    // Format as uppercase hex string
+    return digest.bytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join().toUpperCase();
+  }
+
+  /// Generate a device fingerprint from a key/identifier (Fallback for discovery compatibility if needed)
   String generateFingerprint(String deviceId) {
-    // SHA-256 of device ID, take first 12 hex chars formatted as pairs
     final bytes = utf8.encode(deviceId);
-    var hash = 0x811c9dc5; // FNV-1a
+    var hash = 0x811c9dc5;
     for (final b in bytes) {
       hash ^= b;
       hash = (hash * 0x01000193) & 0xFFFFFFFF;
@@ -33,103 +71,29 @@ class EncryptionService {
     }
     return buffer.toString();
   }
-
-  /// Encrypt data using AES-256-GCM
-  Future<EncryptedPayload> encrypt(Uint8List data, Uint8List key) async {
-    final secretKey = SecretKey(key);
-    final nonce = _generateNonce();
-
-    final secretBox = await _aesGcm.encrypt(
-      data,
-      secretKey: secretKey,
-      nonce: nonce,
-    );
-
-    return EncryptedPayload(
-      ciphertext: Uint8List.fromList(secretBox.cipherText),
-      nonce: Uint8List.fromList(nonce),
-      mac: Uint8List.fromList(secretBox.mac.bytes),
-    );
-  }
-
-  /// Decrypt data using AES-256-GCM
-  Future<Uint8List> decrypt(EncryptedPayload payload, Uint8List key) async {
-    final secretKey = SecretKey(key);
-
-    final secretBox = SecretBox(
-      payload.ciphertext,
-      nonce: payload.nonce,
-      mac: Mac(payload.mac),
-    );
-
-    final decrypted = await _aesGcm.decrypt(
-      secretBox,
-      secretKey: secretKey,
-    );
-
-    return Uint8List.fromList(decrypted);
-  }
-
-  /// Encrypt a chunk of file data (for streaming encryption)
-  Future<Uint8List> encryptChunk(Uint8List chunk, Uint8List key) async {
-    final payload = await encrypt(chunk, key);
-    // Pack as: [4 bytes nonce length][nonce][4 bytes mac length][mac][ciphertext]
-    final buffer = BytesBuilder();
-    buffer.add(_intToBytes(payload.nonce.length));
-    buffer.add(payload.nonce);
-    buffer.add(_intToBytes(payload.mac.length));
-    buffer.add(payload.mac);
-    buffer.add(payload.ciphertext);
-    return buffer.toBytes();
-  }
-
-  /// Decrypt a packed encrypted chunk
-  Future<Uint8List> decryptChunk(Uint8List packed, Uint8List key) async {
-    var offset = 0;
-
-    final nonceLen = _bytesToInt(packed.sublist(offset, offset + 4));
-    offset += 4;
-    final nonce = packed.sublist(offset, offset + nonceLen);
-    offset += nonceLen;
-
-    final macLen = _bytesToInt(packed.sublist(offset, offset + 4));
-    offset += 4;
-    final mac = packed.sublist(offset, offset + macLen);
-    offset += macLen;
-
-    final ciphertext = packed.sublist(offset);
-
-    final payload = EncryptedPayload(
-      ciphertext: Uint8List.fromList(ciphertext),
-      nonce: Uint8List.fromList(nonce),
-      mac: Uint8List.fromList(mac),
-    );
-
-    return decrypt(payload, key);
-  }
-
-  List<int> _generateNonce() {
-    final random = Random.secure();
-    return List<int>.generate(12, (_) => random.nextInt(256));
-  }
-
-  Uint8List _intToBytes(int value) {
-    return Uint8List(4)..buffer.asByteData().setInt32(0, value, Endian.big);
-  }
-
-  int _bytesToInt(List<int> bytes) {
-    return Uint8List.fromList(bytes).buffer.asByteData().getInt32(0, Endian.big);
-  }
 }
 
-class EncryptedPayload {
-  final Uint8List ciphertext;
-  final Uint8List nonce;
-  final Uint8List mac;
+class _PemData {
+  final String privateKey;
+  final String certificate;
+  final String hash;
 
-  EncryptedPayload({
-    required this.ciphertext,
-    required this.nonce,
-    required this.mac,
-  });
+  _PemData(this.privateKey, this.certificate, this.hash);
+}
+
+_PemData _generatePems() {
+  final keyPair = CryptoUtils.generateRSAKeyPair();
+  final privateKey = keyPair.privateKey as RSAPrivateKey;
+  final publicKey = keyPair.publicKey as RSAPublicKey;
+  final dn = {
+    'CN': 'Sendate User',
+    'O': 'Sendate',
+  };
+  final csr = X509Utils.generateRsaCsrPem(dn, privateKey, publicKey);
+  final certificate = X509Utils.generateSelfSignedCertificate(privateKey, csr, 365 * 10);
+  
+  final privateKeyPem = CryptoUtils.encodeRSAPrivateKeyToPemPkcs1(privateKey);
+  final hash = EncryptionService.calculateCertificateHash(certificate);
+
+  return _PemData(privateKeyPem, certificate, hash);
 }
