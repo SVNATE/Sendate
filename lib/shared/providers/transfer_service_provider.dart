@@ -19,6 +19,13 @@ import '../../core/utils/global_navigator.dart';
 import '../../services/conversion/conversion_service.dart';
 
 // ---------------------------------------------------------------------------
+// Conversion service provider
+// ---------------------------------------------------------------------------
+final conversionServiceProvider = Provider<ConversionService>((ref) {
+  return ConversionService();
+});
+
+// ---------------------------------------------------------------------------
 // Transfer service singleton
 // ---------------------------------------------------------------------------
 final transferServiceProvider = Provider<TransferService>((ref) {

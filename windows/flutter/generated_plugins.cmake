@@ -4,6 +4,7 @@
 
 list(APPEND FLUTTER_PLUGIN_LIST
   connectivity_plus
+  ffmpeg_kit_flutter_new_min
   file_selector_windows
   local_auth_windows
   nsd_windows

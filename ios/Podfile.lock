@@ -34,8 +34,15 @@ PODS:
   - DKPhotoGallery/Resource (0.0.19):
     - SDWebImage
     - SwiftyGif
+  - ffmpeg_kit_flutter_new_min (7.1.1):
+    - ffmpeg_kit_flutter_new_min/min (= 7.1.1)
+    - Flutter
+  - ffmpeg_kit_flutter_new_min/min (7.1.1):
+    - Flutter
   - file_picker (0.0.1):
     - DKImagePickerController/PhotoGallery
+    - Flutter
+  - file_selector_ios (0.0.1):
     - Flutter
   - Flutter (1.0.0)
   - flutter_image_compress_common (1.0.0):
@@ -95,13 +102,17 @@ PODS:
   - share_plus (0.0.1):
     - Flutter
   - SwiftyGif (5.4.5)
+  - uri_content (0.0.1):
+    - Flutter
   - wakelock_plus (0.0.1):
     - Flutter
 
 DEPENDENCIES:
   - connectivity_plus (from `.symlinks/plugins/connectivity_plus/ios`)
   - device_info_plus (from `.symlinks/plugins/device_info_plus/ios`)
+  - ffmpeg_kit_flutter_new_min (from `.symlinks/plugins/ffmpeg_kit_flutter_new_min/ios`)
   - file_picker (from `.symlinks/plugins/file_picker/ios`)
+  - file_selector_ios (from `.symlinks/plugins/file_selector_ios/ios`)
   - Flutter (from `Flutter`)
   - flutter_image_compress_common (from `.symlinks/plugins/flutter_image_compress_common/ios`)
   - flutter_local_notifications (from `.symlinks/plugins/flutter_local_notifications/ios`)
@@ -116,6 +127,7 @@ DEPENDENCIES:
   - share_handler_ios (from `.symlinks/plugins/share_handler_ios/ios`)
   - share_handler_ios_models (from `.symlinks/plugins/share_handler_ios/ios/Models`)
   - share_plus (from `.symlinks/plugins/share_plus/ios`)
+  - uri_content (from `.symlinks/plugins/uri_content/ios`)
   - wakelock_plus (from `.symlinks/plugins/wakelock_plus/ios`)
 
 SPEC REPOS:
@@ -133,8 +145,12 @@ EXTERNAL SOURCES:
     :path: ".symlinks/plugins/connectivity_plus/ios"
   device_info_plus:
     :path: ".symlinks/plugins/device_info_plus/ios"
+  ffmpeg_kit_flutter_new_min:
+    :path: ".symlinks/plugins/ffmpeg_kit_flutter_new_min/ios"
   file_picker:
     :path: ".symlinks/plugins/file_picker/ios"
+  file_selector_ios:
+    :path: ".symlinks/plugins/file_selector_ios/ios"
   Flutter:
     :path: Flutter
   flutter_image_compress_common:
@@ -163,6 +179,8 @@ EXTERNAL SOURCES:
     :path: ".symlinks/plugins/share_handler_ios/ios/Models"
   share_plus:
     :path: ".symlinks/plugins/share_plus/ios"
+  uri_content:
+    :path: ".symlinks/plugins/uri_content/ios"
   wakelock_plus:
     :path: ".symlinks/plugins/wakelock_plus/ios"
 
@@ -171,7 +189,9 @@ SPEC CHECKSUMS:
   device_info_plus: 21fcca2080fbcd348be798aa36c3e5ed849eefbe
   DKImagePickerController: 946cec48c7873164274ecc4624d19e3da4c1ef3c
   DKPhotoGallery: b3834fecb755ee09a593d7c9e389d8b5d6deed60
+  ffmpeg_kit_flutter_new_min: 50a756e9c23b653cbe0a8eea54565ae7a3a09c4e
   file_picker: a0560bc09d61de87f12d246fc47d2119e6ef37be
+  file_selector_ios: ec57ec07954363dd730b642e765e58f199bb621a
   Flutter: cabc95a1d2626b1b06e7179b784ebcf0c0cde467
   flutter_image_compress_common: 1697a328fd72bfb335507c6bca1a65fa5ad87df1
   flutter_local_notifications: 395056b3175ba4f08480a7c5de30cd36d69827e4
@@ -191,8 +211,9 @@ SPEC CHECKSUMS:
   share_handler_ios_models: fc638c9b4330dc7f082586c92aee9dfa0b87b871
   share_plus: 50da8cb520a8f0f65671c6c6a99b3617ed10a58a
   SwiftyGif: 706c60cf65fa2bc5ee0313beece843c8eb8194d4
+  uri_content: cb0aebd6b895c3c4d21fc61621f9e99e435a77ba
   wakelock_plus: e29112ab3ef0b318e58cfa5c32326458be66b556
 
-PODFILE CHECKSUM: 11e1cad7bd7295e023391c0c6545735c83ff2642
+PODFILE CHECKSUM: a3ef929539dc9a965a7a6c0a4c5056ef67554203
 
 COCOAPODS: 1.16.2

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -11,6 +12,7 @@ import '../../../../core/theme/app_colors.dart';
 import '../../../../shared/models/transfer_model.dart';
 import '../../../../shared/providers/transfer_provider.dart';
 import '../../../../shared/providers/transfer_service_provider.dart';
+import '../../../../shared/widgets/device_avatar.dart';
 
 class TransferProgressArgs {
   final List<String> deviceIds;
@@ -243,7 +245,9 @@ class _ActiveState extends ConsumerWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Sending to',
+                  batch.isNotEmpty && batch.first.direction == TransferDirection.received
+                      ? 'Receiving from'
+                      : 'Sending to',
                   style: GoogleFonts.plusJakartaSans(
                     fontSize: 16,
                     color: colorScheme.onSurfaceVariant,
@@ -486,8 +490,7 @@ class _TransferCard extends ConsumerWidget {
           ),
           const Gap(16),
           if (transfer.state == TransferState.sending ||
-              transfer.state == TransferState.paused ||
-              transfer.state == TransferState.completed) ...[
+              transfer.state == TransferState.paused) ...[
             ClipRRect(
               borderRadius: BorderRadius.circular(4),
               child: LinearProgressIndicator(
@@ -499,75 +502,77 @@ class _TransferCard extends ConsumerWidget {
             ),
             const Gap(12),
           ],
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              Expanded(
-                child: Wrap(
-                  crossAxisAlignment: WrapCrossAlignment.center,
-                  spacing: 12,
-                  runSpacing: 4,
-                  children: [
-                    Text(
-                      '${_fmt(transfer.bytesTransferred)} / ${_fmt(transfer.fileSize)}',
-                      style: GoogleFonts.plusJakartaSans(
-                        fontSize: 13,
-                        color: colorScheme.onSurfaceVariant,
+          if (transfer.state == TransferState.sending ||
+              transfer.state == TransferState.paused)
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Expanded(
+                  child: Wrap(
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    spacing: 12,
+                    runSpacing: 4,
+                    children: [
+                      Text(
+                        '${_fmt(transfer.bytesTransferred)} / ${_fmt(transfer.fileSize)}',
+                        style: GoogleFonts.plusJakartaSans(
+                          fontSize: 13,
+                          color: colorScheme.onSurfaceVariant,
+                        ),
                       ),
-                    ),
-                    if (transfer.speed != null && transfer.speed! > 0)
-                      Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text('•', style: TextStyle(color: colorScheme.onSurfaceVariant)),
-                          const Gap(12),
-                          Text(
-                            '${_fmt(transfer.speed!)}/s',
-                            style: GoogleFonts.plusJakartaSans(
-                              fontSize: 13,
-                              color: colorScheme.onSurfaceVariant,
+                      if (transfer.speed != null && transfer.speed! > 0)
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text('•', style: TextStyle(color: colorScheme.onSurfaceVariant)),
+                            const Gap(12),
+                            Text(
+                              '${_fmt(transfer.speed!)}/s',
+                              style: GoogleFonts.plusJakartaSans(
+                                fontSize: 13,
+                                color: colorScheme.onSurfaceVariant,
+                              ),
                             ),
-                          ),
-                        ],
-                      ),
-                    if (_eta() != null)
-                      Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text('•', style: TextStyle(color: colorScheme.onSurfaceVariant)),
-                          const Gap(12),
-                          Text(
-                            _eta()!,
-                            style: GoogleFonts.plusJakartaSans(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w600,
-                              color: colorScheme.primary,
+                          ],
+                        ),
+                      if (_eta() != null)
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text('•', style: TextStyle(color: colorScheme.onSurfaceVariant)),
+                            const Gap(12),
+                            Text(
+                              _eta()!,
+                              style: GoogleFonts.plusJakartaSans(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                                color: colorScheme.primary,
+                              ),
                             ),
-                          ),
-                        ],
-                      ),
-                  ],
+                          ],
+                        ),
+                    ],
+                  ),
                 ),
-              ),
-              const Gap(8),
-              if (isPausable)
-                _SmallIconButton(
-                  icon: LucideIcons.pauseCircle,
-                  onTap: () => controller.pause(transfer.id),
-                ),
-              if (isResumable)
-                _SmallIconButton(
-                  icon: LucideIcons.playCircle,
-                  onTap: () => controller.resume(transfer.id),
-                ),
-              if (isCancellable)
-                _SmallIconButton(
-                  icon: LucideIcons.xCircle,
-                  color: AppColors.transferFailed,
-                  onTap: () => controller.cancel(transfer.id),
-                ),
-            ],
-          ),
+                const Gap(8),
+                if (isPausable)
+                  _SmallIconButton(
+                    icon: LucideIcons.pauseCircle,
+                    onTap: () => controller.pause(transfer.id),
+                  ),
+                if (isResumable)
+                  _SmallIconButton(
+                    icon: LucideIcons.playCircle,
+                    onTap: () => controller.resume(transfer.id),
+                  ),
+                if (isCancellable)
+                  _SmallIconButton(
+                    icon: LucideIcons.xCircle,
+                    color: AppColors.transferFailed,
+                    onTap: () => controller.cancel(transfer.id),
+                  ),
+              ],
+            ),
         ],
       ),
     );
@@ -592,6 +597,64 @@ class _TransferCard extends ConsumerWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   (cardContent as Container).child!,
+                  if (transfer.filePath.toLowerCase().endsWith('.mov')) ...[
+                    const SizedBox(height: 12),
+                    StatefulBuilder(
+                      builder: (context, setState) {
+                        var isConverting = false;
+                        return FilledButton.icon(
+                          icon: isConverting 
+                              ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                              : const Icon(LucideIcons.video, size: 16),
+                          label: Text(isConverting ? 'Converting...' : 'Convert to MP4', style: GoogleFonts.plusJakartaSans(fontSize: 14, fontWeight: FontWeight.w600)),
+                          style: FilledButton.styleFrom(
+                            minimumSize: const Size(double.infinity, 48),
+                            backgroundColor: Colors.purple,
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                          ),
+                          onPressed: isConverting ? null : () async {
+                            setState(() => isConverting = true);
+                            final conversionService = ref.read(conversionServiceProvider);
+                            final newPath = await conversionService.convertFile(
+                              inputPath: transfer.filePath,
+                              targetMimeType: 'video/mp4',
+                              targetExtension: 'mp4',
+                            );
+                            
+                            if (newPath != transfer.filePath && File(newPath).existsSync()) {
+                              final newName = newPath.split(Platform.pathSeparator).last;
+                              final updatedTransfer = transfer.copyWith(
+                                filePath: newPath,
+                                fileName: newName,
+                                mimeType: 'video/mp4',
+                              );
+                              ref.read(activeTransfersProvider.notifier).updateTransfer(
+                                transfer.id,
+                                (t) => updatedTransfer,
+                              );
+                              ref.read(transferHistoryProvider.notifier).updateRecord(
+                                transfer.id,
+                                (t) => updatedTransfer,
+                              );
+                              if (context.mounted) {
+                                setState(() => isConverting = false);
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(content: Text('Successfully converted to MP4!')),
+                                );
+                              }
+                            } else {
+                              setState(() => isConverting = false);
+                              if (context.mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(content: Text('Failed to convert video.')),
+                                );
+                              }
+                            }
+                          },
+                        );
+                      },
+                    ),
+                  ],
                 ],
               ),
             ),

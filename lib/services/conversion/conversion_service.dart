@@ -1,5 +1,7 @@
 import 'dart:io';
 
+import 'package:ffmpeg_kit_flutter_new_min/ffmpeg_kit.dart';
+import 'package:ffmpeg_kit_flutter_new_min/return_code.dart';
 import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:path_provider/path_provider.dart';
 
@@ -104,12 +106,18 @@ class ConversionService {
         );
         if (result != null) return result.path;
       } else if (targetMimeType == 'video/mp4') {
-        // For MOV → MP4, many MOV files are already MP4-compatible
-        // (same H.264/AAC codec, just different container).
-        // Copy with new extension as basic conversion.
-        final outputFile = File(outputPath);
-        await inputFile.copy(outputFile.path);
-        return outputFile.path;
+        // Use FFmpeg to remux the container from MOV to MP4 losslessly
+        final command = '-y -i "$inputPath" -c copy "$outputPath"';
+        final session = await FFmpegKit.execute(command);
+        final returnCode = await session.getReturnCode();
+        
+        if (ReturnCode.isSuccess(returnCode)) {
+          return outputPath;
+        } else {
+          final logs = await session.getLogsAsString();
+          _log.debug('FFmpeg remux failed: $logs');
+          // If conversion fails, fall through to return original
+        }
       }
     } catch (e) {
       _log.debug('File conversion failed for $inputPath: $e');

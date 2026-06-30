@@ -376,6 +376,7 @@ class TransferService {
 
       int bytesSent = 0;
       int unwrittenBytes = 0;
+      int lastEmitMs = 0;
       final stopwatch = Stopwatch()..start();
 
       await for (final chunk in fileStream) {
@@ -432,7 +433,12 @@ class TransferService {
           speed: speed,
         );
         _activeTransfers[transferId] = transfer;
-        _emit(transfer);
+        
+        // Throttle UI updates to roughly every 100ms
+        if (elapsed - lastEmitMs > 100) {
+          _emit(transfer);
+          lastEmitMs = elapsed;
+        }
 
         if (bytesSent % (AppConstants.defaultChunkSize * 10) == 0) {
           _saveResumeData(transferId, bytesSent, finalPath, target);
@@ -544,6 +550,7 @@ class TransferService {
     int bytesReceived = 0;
     Stopwatch? stopwatch;
     TransferModel? transfer;
+    int lastEmitMs = 0;
 
     // Encrypted chunk framing state
     int? pendingChunkLen;
@@ -639,23 +646,29 @@ class TransferService {
 
           } else if (approvalSent && receiving && sink != null) {
             // Step 3: stream body bytes
-            pendingChunkLen = await _processBodyBytes(
-              buffer: buffer,
-              isEncrypted: isEncrypted!,
-              sessionKey: sessionKey,
-              sink: sink!,
-              stopwatch: stopwatch!,
-              fileSize: fileSize!,
-              transfer: transfer!,
-              transferId: transferId!,
-              pendingChunkLen: pendingChunkLen,
-              onProgress: (t) {
-                transfer = t;
-                bytesReceived = t.bytesTransferred;
-                _activeTransfers[transferId!] = t;
-                _emit(t);
-              },
-            );
+              
+              pendingChunkLen = await _processBodyBytes(
+                buffer: buffer,
+                isEncrypted: isEncrypted!,
+                sessionKey: sessionKey,
+                sink: sink!,
+                stopwatch: stopwatch!,
+                fileSize: fileSize!,
+                transfer: transfer!,
+                transferId: transferId!,
+                pendingChunkLen: pendingChunkLen,
+                onProgress: (t) {
+                  transfer = t;
+                  bytesReceived = t.bytesTransferred;
+                  _activeTransfers[transferId!] = t;
+                  
+                  final elapsed = stopwatch!.elapsedMilliseconds;
+                  if (elapsed - lastEmitMs > 100) {
+                    _emit(t);
+                    lastEmitMs = elapsed;
+                  }
+                },
+              );
           }
           
           if (buffer.length == startLen) break;

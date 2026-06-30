@@ -7,6 +7,7 @@ import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 import 'package:open_filex/open_filex.dart';
+import 'dart:io';
 
 import '../../../../shared/models/sendate_file.dart';
 import '../../../../shared/models/transfer_model.dart';
@@ -263,6 +264,58 @@ class HistoryScreen extends ConsumerWidget {
                 const Gap(16),
               ],
               if (canOpen) ...[
+                if (transfer.filePath.toLowerCase().endsWith('.mov')) ...[
+                  StatefulBuilder(
+                    builder: (ctx, setSheetState) {
+                      var isConverting = false;
+                      return FilledButton.icon(
+                        icon: isConverting 
+                            ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                            : const Icon(LucideIcons.video, size: 20),
+                        label: Text(isConverting ? 'Converting...' : 'Convert to MP4', style: GoogleFonts.plusJakartaSans(fontSize: 16, fontWeight: FontWeight.w600)),
+                        style: FilledButton.styleFrom(
+                          minimumSize: const Size(double.infinity, 56),
+                          backgroundColor: Colors.purple,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                        ),
+                        onPressed: isConverting ? null : () async {
+                          setSheetState(() => isConverting = true);
+                          final conversionService = ref.read(conversionServiceProvider);
+                          final newPath = await conversionService.convertFile(
+                            inputPath: transfer.filePath,
+                            targetMimeType: 'video/mp4',
+                            targetExtension: 'mp4',
+                          );
+                          
+                          if (newPath != transfer.filePath && File(newPath).existsSync()) {
+                            final newName = newPath.split(Platform.pathSeparator).last;
+                            ref.read(transferHistoryProvider.notifier).updateRecord(transfer.id, (t) {
+                              return t.copyWith(
+                                filePath: newPath,
+                                fileName: newName,
+                                mimeType: 'video/mp4',
+                              );
+                            });
+                            if (context.mounted) {
+                              Navigator.pop(ctx);
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(content: Text('Successfully converted to MP4!')),
+                              );
+                            }
+                          } else {
+                            setSheetState(() => isConverting = false);
+                            if (context.mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(content: Text('Failed to convert video.')),
+                              );
+                            }
+                          }
+                        },
+                      );
+                    },
+                  ),
+                  const Gap(16),
+                ],
                 FilledButton.icon(
                   icon: const Icon(LucideIcons.externalLink, size: 20),
                   label: Text('Open File', style: GoogleFonts.plusJakartaSans(fontSize: 16, fontWeight: FontWeight.w600)),

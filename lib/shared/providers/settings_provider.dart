@@ -84,7 +84,7 @@ class AutoConvertNotifier extends StateNotifier<bool> {
 
   static bool _load() {
     final box = Hive.box(AppConstants.settingsBox);
-    return box.get('auto_convert', defaultValue: true) as bool;
+    return box.get('auto_convert', defaultValue: false) as bool;
   }
 
   Future<void> toggle() async {

@@ -116,9 +116,9 @@ class _SendScreenState extends ConsumerState<SendScreen> {
               ),
               const Gap(16),
               _ContentTypeGrid(
-                onPickPhotos: () { if (!_isPicking) _pickFiles(); },
-                onPickVideos: () { if (!_isPicking) _pickFiles(); },
-                onPickFiles: () { if (!_isPicking) _pickFiles(); },
+                onPickPhotos: () { if (!_isPicking) _pickFiles(FileType.image); },
+                onPickVideos: () { if (!_isPicking) _pickFiles(FileType.video); },
+                onPickFiles: () { if (!_isPicking) _pickFiles(FileType.any); },
                 onPickFolder: _pickFolder,
                 onClipboard: _sendClipboard,
               ),
@@ -234,11 +234,11 @@ class _SendScreenState extends ConsumerState<SendScreen> {
     );
   }
 
-  Future<void> _pickFiles() async {
+  Future<void> _pickFiles(FileType type) async {
     setState(() => _isPicking = true);
     
     try {
-      final result = await NativeFilePicker.pickFiles();
+      final result = await NativeFilePicker.pickFiles(type: type);
       if (result != null && result.isNotEmpty) {
         ref.read(selectedFilesProvider.notifier).state = result;
       }

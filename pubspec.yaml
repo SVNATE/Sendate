@@ -54,6 +54,8 @@ dependencies:
 
   # Conversion
   flutter_image_compress: ^2.3.0
+  ffmpeg_kit_flutter_new_min: ^3.3.2
+
   # Background (desktop only - tray)
   tray_manager: ^0.2.3
   window_manager: ^0.4.3
